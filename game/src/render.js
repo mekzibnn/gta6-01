@@ -220,15 +220,21 @@ export function createRenderer(canvas) {
         }
       }
       if (b.label) {
-        // Only draw the label when its centre is comfortably inside the view:
-        // a half-clipped label at the frame edge reads as a bug.
+        // Only draw the label when its centre is comfortably inside the view
+        // AND clear of the HUD: a label under a panel (or half-clipped at the
+        // frame edge) reads as a bug. The HUD always covers the top band
+        // (cash / objective / wanted), the minimap's corner, and the bottom
+        // band (weapon / speed), so labels never go there.
         const lx = b.x + b.w / 2;
         const ly = b.y + b.h / 2;
-        if (lx < cam.x + 70 || lx > cam.x + VIEW.width - 70 || ly < cam.y + 24 || ly > cam.y + VIEW.height - 24) continue;
+        const sx = lx - cam.x;
+        const sy = ly - cam.y;
+        if (sy < 100 || sy > VIEW.height - 80 || sx < 40 || sx > VIEW.width - 40) continue;
+        if (sx > VIEW.width - 200 && sy < 280) continue; // minimap corner
         ctx.fillStyle = PALETTE.text;
         ctx.font = `700 13px ${FONT}`;
         ctx.textAlign = 'center';
-        ctx.fillText(b.label, lx - cam.x, ly + 4 - cam.y);
+        ctx.fillText(b.label, sx, sy + 4);
         ctx.textAlign = 'left';
       }
     }
