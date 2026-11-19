@@ -6,8 +6,13 @@
 import { CITY, WORLD, PALETTE } from './config.js';
 import { pick, range } from './random.js';
 
-const ROAD_COLORS = ['#c94f43', '#d07a2e', '#2f7fd0', '#5f9e52', '#8a6fbf', '#c9a227', '#3fa7a0', '#b0527a'];
-const ROOF_COLORS = ['#8a6f5c', '#a08060', '#7d8a99', '#b09a7a', '#6f7d6a', '#9a7d8a'];
+const ROAD_COLORS = ['#c94f43', '#d07a2e', '#2f7fd0', '#5f9e52', '#8a6fbf', '#c9a227', '#3fa7a0', '#b0527a', '#e2725b', '#4fb3a9', '#e8b4d9', '#7fb2e5', '#d9a441', '#a8c66c'];
+const ROOF_COLORS = ['#8a6f5c', '#a08060', '#7d8a99', '#b09a7a', '#6f7d6a', '#9a7d8a', '#5d6b7a', '#a06a5a'];
+
+// Blocks that hold a landmark building (key "i,j"): no generated building
+// goes there, so the landmark stands on its own forecourt instead of
+// colliding with a random block. The landmark rects are defined below.
+const LANDMARK_BLOCKS = new Set(['2,1', '5,2', '3,4', '4,3', '7,3', '0,2', '1,1']);
 
 /** Road centre lines, derived from the grid constants. */
 export function roadLines() {
@@ -78,6 +83,12 @@ export function buildCity(random) {
       const y0 = horizontal[j] + CITY.road / 2 + 14;
       const y1 = horizontal[j + 1] - CITY.road / 2 - 14;
       if (y0 >= CITY.beachY) continue;
+      // A landmark block: no generated building here, just a paved forecourt
+      // for the landmark (drawn as a lot, the landmark building on top).
+      if (LANDMARK_BLOCKS.has(`${i},${j}`)) {
+        lots.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+        continue;
+      }
       const cx = (x0 + x1) / 2;
       const cy = (y0 + y1) / 2;
       // Central park in the middle of town.
@@ -101,29 +112,38 @@ export function buildCity(random) {
         const bx = x0 + 12 + b * ((x1 - x0) / count);
         const by = y0 + 12;
         const h = range(random, 0.35, 1);
+        const styleRoll = random();
         buildings.push({
           x: bx, y: by, w: bw, h: bh,
           color: pick(random, ROAD_COLORS),
           roof: pick(random, ROOF_COLORS),
           height: h,
           windows: Math.floor(range(random, 2, 5)),
+          // Look: 0 = lit dot grid, 1 = horizontal window bands,
+          // 2 = big framed windows. Plus rooftop clutter.
+          style: styleRoll < 0.5 ? 0 : styleRoll < 0.8 ? 1 : 2,
+          ac: random() < 0.4,
+          tank: random() < 0.25,
           label: '',
         });
       }
     }
   }
 
-  // Landmark buildings at the named places (drawn bigger, labelled on the map).
-  function landmark(place, w, h, color) {
-    buildings.push({ x: place.x - w / 2, y: place.y - h / 2, w, h, color, roof: '#5d4a3a', height: 0.8, windows: 4, label: place.label });
+  // Landmark buildings at the named places. The mission logic points at the
+  // PLACE (on the street, reachable by car); the BUILDING itself sits inside
+  // the next block, so no car ever drives over its label and no road is
+  // blocked by a landmark. Rects are (centre x, centre y, w, h).
+  function landmark(place, cx, cy, w, h, color) {
+    buildings.push({ x: cx - w / 2, y: cy - h / 2, w, h, color, roof: '#5d4a3a', height: 0.8, windows: 4, style: 2, ac: true, tank: false, label: place.label });
   }
-  landmark(places.garage, 150, 90, '#b06a2e');
-  landmark(places.spray, 150, 90, '#2fa36b');
-  landmark(places.gunshop, 120, 80, '#4a4a55');
-  landmark(places.clinic, 130, 90, '#e8e2d4');
-  landmark(places.portbank, 170, 100, '#8a94a6');
-  landmark(places.marina, 140, 90, '#3f8fa8');
-  landmark(places.hideout, 110, 80, '#c9a227');
+  landmark(places.garage, 1090, 660, 150, 90, '#b06a2e');
+  landmark(places.spray, 2350, 1150, 150, 90, '#2fa36b');
+  landmark(places.gunshop, 1550, 1950, 120, 80, '#4a4a55');
+  landmark(places.clinic, 1950, 1550, 130, 90, '#e8e2d4');
+  landmark(places.portbank, 3150, 1550, 170, 100, '#8a94a6');
+  landmark(places.marina, 350, 1150, 140, 90, '#3f8fa8');
+  landmark(places.hideout, 750, 750, 110, 80, '#c9a227');
 
   // Palms along the beach and lamps along every road.
   for (let x = 200; x < WORLD.width; x += 260) {

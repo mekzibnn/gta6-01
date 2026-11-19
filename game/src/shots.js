@@ -43,15 +43,26 @@ function putPlayerInCar(game, kind, x, y, angle) {
   return car;
 }
 
-function addPoliceChase(game, count) {
+function addPoliceChase(game, count, baseDist = 260) {
   const player = game.player;
   for (let i = 0; i < count; i += 1) {
     const behind = player.angle + Math.PI + (i - count / 2) * 0.35;
-    const dist = 260 + i * 90;
+    const dist = baseDist + i * 70;
     const car = createCar('police', player.x + Math.cos(behind) * dist, player.y + Math.sin(behind) * dist, player.angle, game.random);
     car.speed = 320;
     game.policeCars.push(car);
   }
+}
+
+/** One interceptor ahead of the player, turned to face them: a roadblock. */
+function addPoliceAhead(game, dist = 300, lateral = 120) {
+  const player = game.player;
+  const a = player.angle;
+  const x = player.x + Math.cos(a) * dist - Math.sin(a) * lateral;
+  const y = player.y + Math.sin(a) * dist + Math.cos(a) * lateral;
+  const car = createCar('police', x, y, a + Math.PI, game.random);
+  car.speed = 200;
+  game.policeCars.push(car);
 }
 
 /**
@@ -89,10 +100,10 @@ export function stageShot(name, game) {
     game.player.health = 78;
     game.player.wanted = 2;
     game.clock = 22 * 60 + 40;
-    addPoliceChase(game, 1);
+    addPoliceChase(game, 1, 200);
     game.objectiveText = 'Lose the SCPD — reach Spray & Go';
     game.missionTarget = game.city.places.spray;
-    autopilotDrive(game, 2.5);
+    autopilotDrive(game, 1.5);
     return { screen: 'play' };
   }
   if (scene === 'drive') {
@@ -105,19 +116,23 @@ export function stageShot(name, game) {
     autopilotDrive(game, 3.5);
     return { screen: 'play' };
   }
-  // Cover: a three-star chase through the middle of town.
+  // Cover: a three-star chase through the middle of town, at golden hour.
+  // The road ahead is clear now (landmarks sit inside blocks), so the car
+  // actually accelerates; the police start close and one cuts in ahead, and
+  // the autopilot is short so the whole pack stays in the frame.
   putPlayerInCar(game, 'sport', 1350, 950, 0);
   game.player.cash = 1890;
   game.player.health = 84;
   game.player.wanted = 3;
   game.player.weapon = 'pistol';
   game.player.ammo = 18;
-  game.clock = 16 * 60 + 10;
+  game.clock = 17 * 60 + 20;
   game.mission.index = 3;
   startMission(game.mission, null);
   game.missionTarget = game.city.places.hideout;
   game.objectiveText = 'Escape to the Hideout — do not get busted';
-  addPoliceChase(game, 3);
-  autopilotDrive(game, 2.0);
+  addPoliceChase(game, 3, 150);
+  addPoliceAhead(game, 300, 120);
+  autopilotDrive(game, 1.2);
   return { screen: 'play' };
 }

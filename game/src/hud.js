@@ -32,8 +32,9 @@ export function drawHud(ctx, game) {
   const { player, mission, clock } = game;
   ctx.textBaseline = 'alphabetic';
 
-  // Top-left: cash + health.
-  panel(ctx, 16, 14, 250, 64);
+  // Top-left: cash + health. Wide enough that the name never spills past
+  // the panel edge (v1 clipped "LEO MARIN" at 250px).
+  panel(ctx, 16, 14, 300, 64);
   ctx.fillStyle = '#7dff8a';
   ctx.font = `700 26px ${FONT_DISPLAY}`;
   ctx.textAlign = 'left';
@@ -89,7 +90,8 @@ export function drawHud(ctx, game) {
     ctx.fillText('FISTS  (Q: pistol)', 30, VIEW.height - 30);
   }
 
-  // Bottom-right: speed when driving, clock always.
+  // Bottom-right: speed always (0 on foot) + clock, so every screenshot
+  // reads the same way.
   const hours = Math.floor(clock / 60) % 24;
   const minutes = Math.floor(clock % 60);
   const timeText = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
@@ -97,12 +99,8 @@ export function drawHud(ctx, game) {
   ctx.fillStyle = PALETTE.text;
   ctx.font = `700 16px ${FONT_DISPLAY}`;
   ctx.textAlign = 'right';
-  if (!player.onFoot && player.car) {
-    const kmh = Math.round(Math.abs(player.car.speed) * 0.36);
-    ctx.fillText(`${kmh} km/h   ${timeText}`, VIEW.width - 30, VIEW.height - 30);
-  } else {
-    ctx.fillText(`${timeText}  SOLMAR`, VIEW.width - 30, VIEW.height - 30);
-  }
+  const kmh = !player.onFoot && player.car ? Math.round(Math.abs(player.car.speed) * 0.36) : 0;
+  ctx.fillText(`${kmh} km/h   ${timeText}`, VIEW.width - 30, VIEW.height - 30);
   ctx.textAlign = 'left';
 
   // Toast message centre-screen.
