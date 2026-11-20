@@ -1,13 +1,20 @@
 // The HUD: cash, health, wanted stars, mission objective, speed, weapon and
 // the minimap, all drawn on the canvas so the screenshots show the game
 // exactly as the player sees it.
-import { VIEW, PALETTE, FONT, FONT_DISPLAY, WORLD, CITY } from './config.js';
+import { VIEW, PALETTE, FONT, FONT_DISPLAY, WORLD, CITY, RESPECT_RANKS, WEAPONS, WEAPON_ORDER, GARAGE, RACES } from './config.js';
 
 function panel(ctx, x, y, w, h) {
   ctx.fillStyle = PALETTE.hudPanel;
   ctx.beginPath();
   ctx.roundRect(x, y, w, h, 10);
   ctx.fill();
+}
+
+/** The respect rank for a point total (RESPECT_RANKS is sorted by min). */
+function respectRank(respect) {
+  let rank = RESPECT_RANKS[0];
+  for (const r of RESPECT_RANKS) if (respect >= r.min) rank = r;
+  return rank;
 }
 
 function star(ctx, x, y, size, filled) {
@@ -49,6 +56,25 @@ export function drawHud(ctx, game) {
   ctx.fillText('LEO MARIN', 218, 46);
   ctx.fillText('HEALTH', 218, 66);
 
+  // Respect: rank, progress to the next rank, and the current district.
+  const rank = respectRank(game.respect || 0);
+  const nextRank = RESPECT_RANKS[RESPECT_RANKS.indexOf(rank) + 1];
+  panel(ctx, 16, 86, 300, 46);
+  ctx.fillStyle = '#ffd94a';
+  ctx.font = `700 14px ${FONT_DISPLAY}`;
+  ctx.fillText(`RESPECT — ${rank.name.toUpperCase()}`, 30, 106);
+  ctx.fillStyle = '#222';
+  ctx.fillRect(30, 112, 180, 8);
+  const frac = nextRank ? (game.respect - rank.min) / (nextRank.min - rank.min) : 1;
+  ctx.fillStyle = '#ffd94a';
+  ctx.fillRect(30, 112, 180 * Math.min(1, Math.max(0, frac)), 8);
+  ctx.fillStyle = PALETTE.text;
+  ctx.font = `600 11px ${FONT}`;
+  const districtKey = game.district ? game.district.key : 'central';
+  const standing = game.respectByDistrict ? (game.respectByDistrict[districtKey] || 0) : 0;
+  ctx.fillText(`${game.district ? game.district.name : 'Central Solmar'}  •  ${standing} pts`, 218, 106);
+  ctx.fillText(nextRank ? `Next: ${nextRank.name} (${game.respect}/${nextRank.min})` : 'Top of the city', 218, 120);
+
   // Top-right: wanted stars.
   panel(ctx, VIEW.width - 236, 14, 220, 44);
   ctx.fillStyle = PALETTE.text;
@@ -56,6 +82,16 @@ export function drawHud(ctx, game) {
   ctx.fillText('WANTED', VIEW.width - 222, 42);
   for (let i = 0; i < 5; i += 1) {
     star(ctx, VIEW.width - 148 + i * 26, 36, 11, i < player.wanted);
+  }
+
+  // Air One: the helicopter is above.
+  if (game.heli) {
+    panel(ctx, VIEW.width - 236, 66, 220, 26);
+    ctx.fillStyle = '#ff5a4e';
+    ctx.font = `700 14px ${FONT_DISPLAY}`;
+    ctx.textAlign = 'center';
+    ctx.fillText('AIR ONE OVERHEAD', VIEW.width - 126, 84);
+    ctx.textAlign = 'left';
   }
 
   // Top-centre: current objective.
@@ -80,15 +116,45 @@ export function drawHud(ctx, game) {
     ctx.textAlign = 'left';
   }
 
-  // Bottom-left: weapon + ammo, or fists.
-  panel(ctx, 16, VIEW.height - 58, 170, 42);
-  ctx.fillStyle = PALETTE.text;
-  ctx.font = `700 16px ${FONT_DISPLAY}`;
-  if (player.weapon === 'pistol') {
-    ctx.fillText(`PISTOL  ${player.ammo}`, 30, VIEW.height - 30);
-  } else {
-    ctx.fillText('FISTS  (Q: pistol)', 30, VIEW.height - 30);
+  // Street race timer + checkpoint count, under the objective.
+  if (game.race && game.race.active) {
+    const t = Math.ceil(game.race.timer);
+    ctx.font = `700 20px ${FONT_DISPLAY}`;
+    ctx.fillStyle = t <= 30 ? '#ff5a4e' : '#ffd94a';
+    ctx.textAlign = 'center';
+    ctx.fillText(`RACE ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}  •  ${game.race.checkpoint + 1}/${RACES.checkpoints.length}`, VIEW.width / 2, 74);
+    ctx.textAlign = 'left';
   }
+
+  // Bottom-left: crew, then weapon slots 1-4 with ammo.
+  if (game.crew && game.crew.length > 0) {
+    panel(ctx, 16, VIEW.height - 106, 360, 34);
+    ctx.fillStyle = '#7dff8a';
+    ctx.font = `700 13px ${FONT_DISPLAY}`;
+    ctx.fillText(`CREW  ${game.crew.map((m) => m.name.toUpperCase()).join('  •  ')}`, 30, VIEW.height - 83);
+  }
+  panel(ctx, 16, VIEW.height - 58, 360, 42);
+  ctx.font = `700 13px ${FONT_DISPLAY}`;
+  let wx = 30;
+  for (let i = 0; i < WEAPON_ORDER.length; i += 1) {
+    const name = WEAPON_ORDER[i];
+    const owned = game.weaponsOwned.includes(name);
+    const current = player.weapon === name;
+    const label = name === 'fists' ? 'FISTS' : `${WEAPONS[name].name.toUpperCase()} ${player.ammo[name] || 0}`;
+    ctx.fillStyle = current ? '#ffd94a' : owned ? PALETTE.text : 'rgba(255,255,255,0.35)';
+    ctx.fillText(`${i + 1}:${label}`, wx, VIEW.height - 30);
+    wx += ctx.measureText(`${i + 1}:${label}`).width + 14;
+  }
+
+  // Bottom-centre: the radio station, so the audio has a face.
+  const stationName = game.audio && game.audio.stationName ? game.audio.stationName() : 'SOL FM';
+  ctx.font = `700 13px ${FONT_DISPLAY}`;
+  const rw = ctx.measureText(`♪ ${stationName}`).width + 36;
+  panel(ctx, (VIEW.width - rw) / 2, VIEW.height - 58, rw, 42);
+  ctx.fillStyle = '#ffd94a';
+  ctx.textAlign = 'center';
+  ctx.fillText(`♪ ${stationName}`, VIEW.width / 2, VIEW.height - 30);
+  ctx.textAlign = 'left';
 
   // Bottom-right: speed always (0 on foot) + clock, so every screenshot
   // reads the same way.
@@ -111,6 +177,40 @@ export function drawHud(ctx, game) {
     ctx.fillStyle = game.toastColor || PALETTE.text;
     ctx.textAlign = 'center';
     ctx.fillText(game.toast, VIEW.width / 2, 126);
+    ctx.textAlign = 'left';
+  }
+
+  // Garage menu: pick an upgrade with 1-3, close with E.
+  if (game.garageOpen) {
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(0, 0, VIEW.width, VIEW.height);
+    panel(ctx, VIEW.width / 2 - 260, VIEW.height / 2 - 140, 520, 280);
+    ctx.fillStyle = PALETTE.text;
+    ctx.font = `700 26px ${FONT_DISPLAY}`;
+    ctx.textAlign = 'center';
+    ctx.fillText('SOLMAR AUTO GARAGE', VIEW.width / 2, VIEW.height / 2 - 100);
+    ctx.font = `600 15px ${FONT}`;
+    ctx.fillText(`Cash $${player.cash.toLocaleString('en-US')} — press 1 / 2 / 3, E to leave`, VIEW.width / 2, VIEW.height / 2 - 72);
+    const rows = [
+      { key: 'engine', label: 'Engine', level: game.upgrades.engine, list: GARAGE.engine },
+      { key: 'armor', label: 'Armor', level: game.upgrades.armor, list: GARAGE.armor },
+      { key: 'paint', label: 'Paint', level: game.upgrades.paint, list: GARAGE.paints },
+    ];
+    ctx.textAlign = 'left';
+    rows.forEach((row, i) => {
+      const y = VIEW.height / 2 - 40 + i * 44;
+      const next = row.key === 'paint'
+        ? `Next: ${GARAGE.paints[(row.level + 1) % GARAGE.paints.length]} — $200`
+        : row.level >= row.list.length - 1
+          ? 'MAXED OUT'
+          : `Next: ${row.list[row.level + 1].name} — $${row.list[row.level + 1].cost}`;
+      ctx.fillStyle = '#ffd94a';
+      ctx.font = `700 17px ${FONT_DISPLAY}`;
+      ctx.fillText(`${i + 1}. ${row.label}`, VIEW.width / 2 - 240, y);
+      ctx.fillStyle = PALETTE.text;
+      ctx.font = `600 14px ${FONT}`;
+      ctx.fillText(row.key === 'paint' ? `Current: ${GARAGE.paints[row.level]}` : `Level ${row.level} — ${next}`, VIEW.width / 2 - 120, y);
+    });
     ctx.textAlign = 'left';
   }
 
@@ -153,6 +253,7 @@ export function drawMinimap(ctx, game) {
   dot(city.places.spray, '#2fa36b', 4);
   dot(city.places.gunshop, '#c9c9c9', 4);
   dot(city.places.clinic, '#ffffff', 4);
+  dot(city.places.race, '#ffd94a', 4);
   // Mission marker, pulsing.
   const step = mission.active && game.missionTarget ? game.missionTarget : null;
   if (step) {
@@ -164,7 +265,7 @@ export function drawMinimap(ctx, game) {
     ctx.stroke();
     dot(step, PALETTE.mission, 4);
   }
-  // Police as red dots, player as a white arrow.
+  // Police as red dots, crew as green dots, Air One as a yellow dot.
   ctx.fillStyle = '#ff5a4e';
   for (const cop of game.policeCars) {
     ctx.beginPath();
@@ -175,6 +276,24 @@ export function drawMinimap(ctx, game) {
     ctx.beginPath();
     ctx.arc(x0 + cop.x * scale, y0 + cop.y * scale, 2.5, 0, Math.PI * 2);
     ctx.fill();
+  }
+  ctx.fillStyle = '#7dff8a';
+  for (const member of game.crew || []) {
+    ctx.beginPath();
+    ctx.arc(x0 + member.x * scale, y0 + member.y * scale, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (game.heli) {
+    ctx.fillStyle = '#ffd94a';
+    ctx.beginPath();
+    ctx.arc(x0 + game.heli.x * scale, y0 + game.heli.y * scale, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Remaining race checkpoints as white dots.
+  if (game.race && game.race.active) {
+    for (let i = game.race.checkpoint; i < RACES.checkpoints.length; i += 1) {
+      dot(city.places[RACES.checkpoints[i]], '#ffffff', 3);
+    }
   }
   ctx.save();
   ctx.translate(x0 + player.x * scale, y0 + player.y * scale);

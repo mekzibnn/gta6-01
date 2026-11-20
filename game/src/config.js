@@ -65,12 +65,73 @@ export const PED = { count: 46, walkSpeed: 55, fleeSpeed: 150 };
 
 export const TRAFFIC = { count: 22, cruise: 150 };
 
-export const MISSION_REWARD = [400, 650, 900, 1400, 2500];
+export const MISSION_REWARD = [400, 650, 900, 1400, 2500, 1800, 2200, 4000];
 export const TAXI_FARE = 120;
 export const PACKAGE_BONUS = 100;
 export const HIDDEN_PACKAGES = 10;
 
-export const SAVE_KEY = 'solmar-heat.save.v1';
+/** Respect: progression that rewards play. Ranks unlock the crew (1500+). */
+export const RESPECT_RANKS = [
+  { at: 0, name: 'Nobody' },
+  { at: 750, name: 'Hustler' },
+  { at: 1500, name: 'Street King' },
+  { at: 3500, name: 'Shot Caller' },
+  { at: 7000, name: 'Solmar Legend' },
+];
+export const RESPECT_MISSION = 120;
+export const RESPECT_RACE = 150;
+export const RESPECT_TAXI = 10;
+export const RESPECT_PACKAGE = 15;
+
+/** Air One: the SCPD helicopter that joins the chase at 4+ stars. */
+export const HELI = {
+  minStars: 4,
+  hoverHeight: 190,
+  followDist: 260,
+  searchlight: true,
+};
+
+/** Radio: three WebAudio stations, switched with R while driving. */
+export const RADIO = {
+  stations: [
+    { name: 'SOL FM', tag: 'sun-soaked pop' },
+    { name: 'PALM 87', tag: 'coastal chill' },
+    { name: 'HEAT 102', tag: 'night drive bass' },
+  ],
+};
+
+/** Weapons: slots 1-4 (Q cycles). Bought at El Gato Guns. */
+export const WEAPONS = {
+  fists:  { name: 'FISTS',  damage: 12, cooldown: 0.45, ammo: Infinity, cost: 0, auto: false },
+  pistol: { name: 'PISTOL', damage: 34, cooldown: 0.28, ammo: 24, cost: 0, auto: false },
+  smg:    { name: 'SMG',    damage: 18, cooldown: 0.12, ammo: 60, cost: 600, auto: true },
+  shotgun:{ name: 'SHOTGUN',damage: 55, cooldown: 0.85, ammo: 12, cost: 900, auto: false },
+};
+export const WEAPON_ORDER = ['fists', 'pistol', 'smg', 'shotgun'];
+
+/** Garage upgrades at Mara's Garage: engine, armor, paint. */
+export const GARAGE = {
+  engine: [
+    { name: 'Stock engine', cost: 0, top: 1.0, accel: 1.0 },
+    { name: 'Tuned engine', cost: 800, top: 1.15, accel: 1.2 },
+    { name: 'Race engine', cost: 1600, top: 1.3, accel: 1.4 },
+  ],
+  armor: [
+    { name: 'No armor', cost: 0, resist: 1.0 },
+    { name: 'Plated body', cost: 700, resist: 0.6 },
+    { name: 'Armored hull', cost: 1400, resist: 0.35 },
+  ],
+  paints: ['#c94f43', '#2f7fd0', '#f2b705', '#43a85a', '#8a6fbf', '#e8e2d4', '#20242c'],
+};
+
+/** Street races: 3 checkpoints, timed. Started at the Palm Strip flag. */
+export const RACES = {
+  reward: 500,
+  timeLimit: 150,
+  checkpoints: ['marina', 'portbank', 'hideout'],
+};
+
+export const SAVE_KEY = 'solmar-heat.save.v2';
 
 export const PALETTE = {
   asphalt: '#3d3a38',

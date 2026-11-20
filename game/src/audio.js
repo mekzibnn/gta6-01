@@ -63,14 +63,22 @@ export function createAudio() {
     src.start(t);
   }
 
-  // A simple coastal groove: Am – F – C – G pads with a soft bass pulse.
-  // step() is called once a frame with the frame time; it schedules ahead.
-  const CHORDS = [
-    [220.0, 261.6, 329.6],
-    [174.6, 220.0, 261.6],
-    [196.0, 246.9, 293.7],
-    [164.8, 196.0, 246.9],
+  // Radio: three stations, each with its own chords, tempo and bass.
+  // SOL FM is bright pop, PALM 87 is slow coastal chill, HEAT 102 is a
+  // driving bass riff for night chases. step() schedules a chord ahead.
+  const STATIONS = [
+    { name: 'SOL FM', step: 1.4, bass: 0.09, lead: true, chords: [
+      [220.0, 261.6, 329.6], [174.6, 220.0, 261.6], [196.0, 246.9, 293.7], [164.8, 196.0, 246.9],
+    ] },
+    { name: 'PALM 87', step: 3.0, bass: 0.06, lead: false, chords: [
+      [261.6, 329.6, 392.0], [220.0, 261.6, 329.6], [174.6, 220.0, 261.6], [196.0, 246.9, 329.6],
+    ] },
+    { name: 'HEAT 102', step: 1.0, bass: 0.14, lead: true, chords: [
+      [110.0, 130.8, 164.8], [98.0, 116.5, 146.8], [110.0, 130.8, 164.8], [123.5, 146.8, 185.0],
+    ] },
   ];
+  let station = 0;
+
   function startMusic() {
     if (!ensure() || !enabled || musicNodes) return;
     const padGain = ctx.createGain();
@@ -144,10 +152,12 @@ export function createAudio() {
       if (!musicNodes) startMusic();
       if (!driving && musicTimer > now) return;
       musicTimer = now + 0.05;
+      const st = STATIONS[station];
       if (musicNodes && ctx.currentTime >= musicNodes.next - 0.05) {
-        const chord = CHORDS[musicNodes.chord % CHORDS.length];
+        const chord = st.chords[musicNodes.chord % st.chords.length];
         musicNodes.chord += 1;
-        musicNodes.next = ctx.currentTime + 2.0;
+        musicNodes.next = ctx.currentTime + st.step;
+        musicNodes.bassGain.gain.value = st.bass;
         for (const freq of chord) {
           const osc = ctx.createOscillator();
           osc.type = 'triangle';
@@ -155,11 +165,25 @@ export function createAudio() {
           const g = ctx.createGain();
           g.gain.setValueAtTime(0.0001, ctx.currentTime);
           g.gain.exponentialRampToValueAtTime(0.5, ctx.currentTime + 0.4);
-          g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 2.0);
+          g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + st.step);
           osc.connect(g);
           g.connect(musicNodes.padGain);
           osc.start();
-          osc.stop(ctx.currentTime + 2.05);
+          osc.stop(ctx.currentTime + st.step + 0.05);
+        }
+        // Lead arpeggio on the bright stations: the top note, doubled.
+        if (st.lead) {
+          const osc = ctx.createOscillator();
+          osc.type = 'sine';
+          osc.frequency.value = chord[2] * 2;
+          const g = ctx.createGain();
+          g.gain.setValueAtTime(0.0001, ctx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.1);
+          g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + st.step * 0.8);
+          osc.connect(g);
+          g.connect(musicNodes.padGain);
+          osc.start();
+          osc.stop(ctx.currentTime + st.step);
         }
         const bass = ctx.createOscillator();
         bass.type = 'sine';
@@ -167,11 +191,11 @@ export function createAudio() {
         const bg = ctx.createGain();
         bg.gain.setValueAtTime(0.0001, ctx.currentTime);
         bg.gain.exponentialRampToValueAtTime(0.9, ctx.currentTime + 0.1);
-        bg.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 1.9);
+        bg.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + st.step * 0.95);
         bass.connect(bg);
         bg.connect(musicNodes.bassGain);
         bass.start();
-        bass.stop(ctx.currentTime + 2.0);
+        bass.stop(ctx.currentTime + st.step);
       }
       if (driving) {
         if (!engineNodes) startEngine();
@@ -184,6 +208,15 @@ export function createAudio() {
       }
     },
     setSiren(on) { if (on) startSiren(); else stopSiren(); },
+    /** Switch radio station (0 SOL FM, 1 PALM 87, 2 HEAT 102). */
+    setStation(index) {
+      station = index % STATIONS.length;
+      if (musicNodes) {
+        musicNodes.chord = 0;
+        musicNodes.next = ctx ? ctx.currentTime + 0.1 : 0;
+      }
+    },
+    stationName() { return STATIONS[station].name; },
     blip() { tone(880, 0.12, 'sine', 0.18, 1320); },
     coin() { tone(660, 0.1, 'square', 0.12); setTimeout(() => tone(990, 0.14, 'square', 0.12), 70); },
     punch() { noise(0.08, 0.25, 900); },

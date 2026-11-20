@@ -1,9 +1,16 @@
 // Solmar Heat, a gta6-01 entry (Node 22, standard library only): the game is
 // this directory's game/ folder — plain static files a desktop browser loads
-// offline (game/index.html and its ES modules, no library, no network
-// request) — and this program hands it in. It copies game/ and screenshots/
-// from beside this file to /output and writes /output/dossier.json, the
-// summary the judge reads, with the vendored make.fun library.
+// offline (game/index.html and its ES modules, plus the vendored three.js in
+// game/vendor/, no network request) — and this program hands it in. It copies
+// game/ and screenshots/ from beside this file to /output and writes
+// /output/dossier.json, the summary the judge reads, with the vendored
+// make.fun library.
+//
+// v2: the game now renders in full 3D with three.js (vendored as
+// game/vendor/three.module.min.js, loaded through the import map in
+// game/index.html), with a chase camera behind Leo. The program itself is
+// unchanged: it still copies game/ and screenshots/ and writes the dossier
+// with the vendored library.
 //
 // Serve it locally with `node serve.ts`, then open http://localhost:8080.
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:

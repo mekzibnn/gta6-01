@@ -9,6 +9,8 @@ export const ACTION_PAUSE = 4;
 export const ACTION_CONFIRM = 8;
 export const ACTION_WEAPON = 16;
 export const ACTION_HANDBRAKE = 32;
+export const ACTION_RADIO = 64;
+export const ACTION_CAMERA = 128;
 
 const UP = new Set(['ArrowUp', 'KeyW']);
 const DOWN = new Set(['ArrowDown', 'KeyS']);
@@ -22,10 +24,14 @@ const PAUSE = new Set(['KeyP', 'Escape']);
 const CONFIRM = new Set(['Space', 'Enter']);
 const HANDBRAKE = new Set(['Space']);
 const MUTE = new Set(['KeyM']);
+const RADIO = new Set(['KeyR']);
+const CAMERA = new Set(['KeyC']);
+const SLOTS = new Set(['Digit1', 'Digit2', 'Digit3', 'Digit4']);
 
 export function createInput(canvas) {
   const keys = new Set();
   let actions = 0;
+  let slot = -1;
   let mouseDown = false;
   let mouseX = 0;
   let mouseY = 0;
@@ -37,6 +43,9 @@ export function createInput(canvas) {
     else if (WEAPON.has(code)) actions |= ACTION_WEAPON;
     else if (PAUSE.has(code)) actions |= ACTION_PAUSE;
     else if (CONFIRM.has(code)) actions |= ACTION_CONFIRM;
+    else if (RADIO.has(code)) actions |= ACTION_RADIO;
+    else if (CAMERA.has(code)) actions |= ACTION_CAMERA;
+    else if (SLOTS.has(code)) slot = Number(code.slice(-1)) - 1;
     else if (MUTE.has(code)) muted = !muted;
   }
 
@@ -85,6 +94,12 @@ export function createInput(canvas) {
       const taken = actions;
       actions = 0;
       return taken;
+    },
+    /** Consume and return the last weapon/garage slot key (0-3), or -1. */
+    takeSlot() {
+      const out = slot;
+      slot = -1;
+      return out;
     },
   };
 }

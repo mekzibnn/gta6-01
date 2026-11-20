@@ -5,8 +5,8 @@
 // The same seed always gives the same streets; the scenes are staged, never
 // drawn by hand.
 import { STEP, WORLD } from './config.js';
-import { stepDrivenCar, stepTrafficCar, stepPoliceCar, createCar } from './vehicles.js';
-import { stepPed } from './actors.js';
+import { stepDrivenCar, stepTrafficCar, stepPoliceCar, createCar, createHelicopter, stepHelicopter } from './vehicles.js';
+import { stepPed, createCrewMember } from './actors.js';
 import { startMission } from './missions.js';
 
 /** Drive straight along the current road for a while. */
@@ -26,6 +26,7 @@ function autopilotDrive(game, seconds) {
     for (const car of game.policeCars) {
       stepPoliceCar(car, player, STEP, game.city, game.cars);
     }
+    if (game.heli) stepHelicopter(game.heli, player, STEP);
     for (const ped of game.peds) stepPed(ped, STEP, game.city, null);
     game.time += STEP;
   }
@@ -77,7 +78,7 @@ export function stageShot(name, game) {
   game.policeCars = [];
   game.cops = [];
   if (scene === 'mission') {
-    // On foot at the Marina, mission 4 briefing live, peds around.
+    // On foot at the Marina, mission 4 briefing live, crew beside Leo.
     game.player.onFoot = true;
     game.player.car = null;
     game.player.x = game.city.places.marina.x + 60;
@@ -86,6 +87,14 @@ export function stageShot(name, game) {
     game.player.cash = 1250;
     game.player.health = 92;
     game.clock = 11 * 60 + 20;
+    game.respect = 800;
+    game.radio = 0;
+    game.audio.setStation(0);
+    game.shotCam = { dist: 170, height: 95, fov: 60 };
+    game.crew = [
+      createCrewMember('Dante', game.player.x - 50, game.player.y + 40, '#e8b98a', '#e74c3c'),
+      createCrewMember('Rosa', game.player.x + 40, game.player.y - 60, '#f1c27d', '#2ecc71'),
+    ];
     game.mission.index = 3;
     startMission(game.mission, null);
     game.missionTarget = game.city.places.marina;
@@ -94,12 +103,17 @@ export function stageShot(name, game) {
     return { screen: 'play' };
   }
   if (scene === 'night') {
-    // Downtown at night, headlights on, one police car closing in.
+    // Downtown at night, headlights on, Air One circling overhead.
     putPlayerInCar(game, 'sport', 1750, 1350, 0);
     game.player.cash = 2340;
     game.player.health = 78;
-    game.player.wanted = 2;
+    game.player.wanted = 4;
     game.clock = 22 * 60 + 40;
+    game.respect = 1600;
+    game.radio = 2;
+    game.audio.setStation(2);
+    game.shotCam = { dist: 320, height: 150, fov: 64 };
+    game.heli = createHelicopter(game.player.x, game.player.y);
     addPoliceChase(game, 1, 200);
     game.objectiveText = 'Lose the SCPD — reach Spray & Go';
     game.missionTarget = game.city.places.spray;
@@ -112,20 +126,31 @@ export function stageShot(name, game) {
     game.player.cash = 860;
     game.player.health = 100;
     game.clock = 17 * 60 + 15;
+    game.respect = 100;
+    game.radio = 1;
+    game.audio.setStation(1);
+    game.shotCam = { dist: 300, height: 140, fov: 62 };
     game.objectiveText = 'Cruise Solmar — next job: Special Delivery';
     autopilotDrive(game, 3.5);
     return { screen: 'play' };
   }
-  // Cover: a three-star chase through the middle of town, at golden hour.
-  // The road ahead is clear now (landmarks sit inside blocks), so the car
-  // actually accelerates; the police start close and one cuts in ahead, and
-  // the autopilot is short so the whole pack stays in the frame.
+  // Cover: a four-star chase through the middle of town, at golden hour,
+  // with Air One overhead. The road ahead is clear now (landmarks sit inside
+  // blocks), so the car actually accelerates; the police start close and one
+  // cuts in ahead, and the autopilot is short so the whole pack stays in
+  // the frame.
   putPlayerInCar(game, 'sport', 1350, 950, 0);
   game.player.cash = 1890;
   game.player.health = 84;
-  game.player.wanted = 3;
+  game.player.wanted = 4;
   game.player.weapon = 'pistol';
-  game.player.ammo = 18;
+  game.player.ammo = { pistol: 18, smg: 60, shotgun: 8 };
+  game.weaponsOwned = ['fists', 'pistol', 'smg'];
+  game.respect = 1600;
+  game.radio = 0;
+  game.audio.setStation(0);
+  game.shotCam = { dist: 380, height: 190, fov: 66 };
+  game.heli = createHelicopter(game.player.x, game.player.y);
   game.clock = 17 * 60 + 20;
   game.mission.index = 3;
   startMission(game.mission, null);

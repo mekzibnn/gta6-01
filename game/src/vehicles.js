@@ -91,13 +91,20 @@ function angleDiff(a, b) {
   return d;
 }
 
-/** One physics step for a driven car. Returns 'crash' when it hits something hard. */
-export function stepDrivenCar(car, input, dt, city, cars) {
+/** One physics step for a driven car. Returns 'crash' when it hits something hard.
+ * `upgrades` is the garage state ({engine, armor, paint}); engine raises top
+ * speed and acceleration, armor softens crashes. */
+export function stepDrivenCar(car, input, dt, city, cars, upgrades) {
   const spec = car.spec;
+  const eng = (upgrades && upgrades.engine) || 0;
+  const armor = (upgrades && upgrades.armor) || 0;
+  const topMul = [1, 1.15, 1.3][eng] || 1;
+  const accMul = [1, 1.2, 1.4][eng] || 1;
+  const resist = [1, 0.6, 0.35][armor] || 1;
   const ground = groundAt(car.x, car.y);
   const surface = ground === 'road' ? 1 : ground === 'sand' ? 0.55 : 0.75;
-  const accel = input.y < 0 ? spec.accel : input.y > 0 ? -spec.brake : 0;
-  const target = spec.top * surface;
+  const accel = input.y < 0 ? spec.accel * accMul : input.y > 0 ? -spec.brake : 0;
+  const target = spec.top * surface * topMul;
   if (input.y < 0) car.speed = Math.min(target, car.speed + accel * dt);
   else if (input.y > 0) {
     if (car.speed > 20) car.speed = Math.max(0, car.speed + accel * dt);
@@ -116,11 +123,11 @@ export function stepDrivenCar(car, input, dt, city, cars) {
   car.x = hit.x;
   car.y = hit.y;
   if (crashed && Math.abs(car.speed) > 120) {
-    car.speed *= 0.35;
+    car.speed *= 1 - 0.65 * resist;
     car.crashed = 0.4;
     return 'crash';
   }
-  if (crashed) car.speed *= 0.7;
+  if (crashed) car.speed *= 1 - 0.3 * resist;
   // Soft bumps against other cars.
   for (const other of cars) {
     if (other === car) continue;
@@ -210,5 +217,33 @@ export function stepPoliceCar(car, target, dt, city, cars) {
       other.y += (oy / d) * push;
     }
   }
+  return dist;
+}
+
+// ---------------------------------------------------------------------------
+// Air One: the SCPD helicopter. It spawns at 4+ wanted stars, circles the
+// player at a hover offset and keeps the heat from cooling off until it leaves.
+// ---------------------------------------------------------------------------
+
+/** Spawn the helicopter above the player. */
+export function createHelicopter(x, y) {
+  return { x: x + 200, y: y - 260, angle: 0, speed: 0, rotor: 0 };
+}
+
+/** One step: close in, circle, and hold station over the player. */
+export function stepHelicopter(heli, target, dt) {
+  const wantAngle = Math.atan2(target.y - heli.y, target.x - heli.x);
+  let diff = wantAngle - heli.angle;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  heli.angle += Math.max(-1.2 * dt, Math.min(1.2 * dt, diff));
+  const dx = target.x - heli.x;
+  const dy = target.y - heli.y;
+  const dist = Math.hypot(dx, dy);
+  const speedTarget = dist > 300 ? 260 : dist > 120 ? 160 : 60;
+  heli.speed += (speedTarget - heli.speed) * Math.min(1, 1.2 * dt);
+  heli.x += Math.cos(heli.angle) * heli.speed * dt;
+  heli.y += Math.sin(heli.angle) * heli.speed * dt;
+  heli.rotor += dt * 22;
   return dist;
 }

@@ -73,6 +73,7 @@ export function buildCity(random) {
     marina: { x: 220, y: 950, label: 'Marina Solmar' },
     portbank: { x: 3150, y: 1350, label: 'Portside Bank' },
     beachbar: { x: 1750, y: 2200, label: 'Playa Bar' },
+    race: { x: 1350, y: 2150, label: 'Palm Strip Race' },
   };
 
   // Blocks are the cells between road lines. One special use per cell.
@@ -165,6 +166,15 @@ export function buildCity(random) {
   for (const spot of spots) hiddenPackages.push({ ...spot, found: false });
 
   return { roads: roadLines(), buildings, parks, palms, lamps, lots, places, hiddenPackages };
+}
+
+/** Which district a point is in: respect is tracked per district. */
+export function districtAt(x, y) {
+  if (x < CITY.marinaX) return { key: 'marina', name: 'Marina' };
+  if (y >= CITY.beachY) return { key: 'palm', name: 'Palm Strip' };
+  if (x >= CITY.portX) return { key: 'portside', name: 'Portside' };
+  if (x >= 1350 && x <= 2150 && y >= 950 && y <= 1750) return { key: 'downtown', name: 'Downtown' };
+  return { key: 'central', name: 'Central Solmar' };
 }
 
 /** Circle-vs-building collision: push the circle out, return the hit building or null. */

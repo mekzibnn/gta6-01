@@ -1,7 +1,7 @@
 // People: the player on foot, the pedestrians who fill the sidewalks, and
 // the foot cops who chase a wanted player down. Pedestrians wander, flee from
 // gunfire and crashes, and sometimes flag a taxi.
-import { PLAYER, POLICE, PED, WORLD } from './config.js';
+import { PLAYER, POLICE, PED, WORLD, WEAPONS } from './config.js';
 import { groundAt, resolveCircle } from './city.js';
 import { range } from './random.js';
 
@@ -15,7 +15,7 @@ export function createPlayer(x, y) {
     onFoot: true,
     car: null,
     weapon: 'fists',
-    ammo: 0,
+    ammo: { pistol: 0, smg: 0, shotgun: 0 },
     cash: 150,
     wanted: 0,
     wantedTimer: 0,
@@ -77,36 +77,41 @@ export function punch(player, peds, cops, audio) {
   return hits;
 }
 
-/** A pistol shot toward the aim angle. Returns the first thing hit, if any. */
+/** A shot from the current weapon: pistol, SMG (fast) or shotgun (spread).
+ * Returns the first thing hit (shotgun: the nearest of up to three), if any. */
 export function shoot(player, aimAngle, peds, cops, cars, audio) {
-  if (player.weapon !== 'pistol' || player.ammo <= 0 || player.shootCooldown > 0) return null;
-  player.shootCooldown = 0.28;
-  player.ammo -= 1;
+  const spec = WEAPONS[player.weapon];
+  if (!spec || player.weapon === 'fists') return null;
+  if ((player.ammo[player.weapon] || 0) <= 0 || player.shootCooldown > 0) return null;
+  player.shootCooldown = spec.cooldown;
+  player.ammo[player.weapon] -= 1;
   if (audio) audio.shoot();
   const rangeMax = 520;
-  let best = null;
-  let bestD = rangeMax;
+  const spread = player.weapon === 'shotgun' ? 26 : 8;
+  const hits = [];
   const consider = (target, radius, kind) => {
     const dx = target.x - player.x;
     const dy = target.y - player.y;
     const along = dx * Math.cos(aimAngle) + dy * Math.sin(aimAngle);
-    if (along < 0 || along > bestD) return;
+    if (along < 0 || along > rangeMax) return;
     const side = Math.abs(-dx * Math.sin(aimAngle) + dy * Math.cos(aimAngle));
-    if (side < radius + 8) { best = { target, kind, dist: along }; bestD = along; }
+    if (side < radius + spread) hits.push({ target, kind, dist: along });
   };
   for (const ped of peds) consider(ped, 13, 'ped');
   for (const cop of cops) consider(cop, 13, 'cop');
   for (const car of cars) consider(car, 26, 'car');
-  if (best) {
-    if (best.kind === 'ped' || best.kind === 'cop') {
-      best.target.health = (best.target.health ?? 50) - 34;
-      best.target.flee = 3;
-      best.target.hitFlash = 0.3;
-    } else if (best.kind === 'car') {
-      best.target.crashed = 0.5;
+  hits.sort((a, b) => a.dist - b.dist);
+  const take = player.weapon === 'shotgun' ? hits.slice(0, 3) : hits.slice(0, 1);
+  for (const hit of take) {
+    if (hit.kind === 'ped' || hit.kind === 'cop') {
+      hit.target.health = (hit.target.health ?? 50) - spec.damage;
+      hit.target.flee = 3;
+      hit.target.hitFlash = 0.3;
+    } else if (hit.kind === 'car') {
+      hit.target.crashed = 0.5;
     }
   }
-  return best;
+  return take[0] || null;
 }
 
 /** Spawn a pedestrian on a sidewalk near a road. */
@@ -198,4 +203,52 @@ export function stepCop(cop, player, dt, city, audio) {
     cop.angle = Math.atan2(dy, dx);
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// The crew: Dante and Rosa. They join once Leo earns Street King respect and
+// fight beside him — they follow at a distance and shoot the nearest cop.
+// ---------------------------------------------------------------------------
+
+/** Spawn a crew member near the player. */
+export function createCrewMember(name, x, y, skin, shirt) {
+  return {
+    name, x, y, angle: 0, health: 80,
+    skin, shirt, speed: 210,
+    shootCooldown: 0, hitFlash: 0, flee: 0, crew: true,
+  };
+}
+
+/** Step one crew member: follow the player, shoot the nearest cop in range. */
+export function stepCrew(member, player, cops, policeCars, dt, city, audio) {
+  if (member.health <= 0) return;
+  if (member.hitFlash > 0) member.hitFlash -= dt;
+  const dx = player.x - member.x;
+  const dy = player.y - member.y;
+  const d = Math.hypot(dx, dy);
+  if (d > 90) {
+    const nx = member.x + (dx / d) * member.speed * dt;
+    const ny = member.y + (dy / d) * member.speed * dt;
+    const hit = resolveCircle(city, nx, ny, 12);
+    member.x = hit.x;
+    member.y = hit.y;
+    member.angle = Math.atan2(dy, dx);
+  }
+  member.shootCooldown -= dt;
+  let target = null;
+  let bestD = 320;
+  for (const cop of cops) {
+    if (cop.health <= 0) continue;
+    const cd = Math.hypot(cop.x - member.x, cop.y - member.y);
+    if (cd < bestD) { bestD = cd; target = cop; }
+  }
+  if (target && member.shootCooldown <= 0) {
+    member.shootCooldown = 1.1;
+    target.health -= 20;
+    target.hitFlash = 0.3;
+    target.flee = 1;
+    member.angle = Math.atan2(target.y - member.y, target.x - member.x);
+    if (audio) audio.shoot();
+  }
+  void policeCars;
 }
