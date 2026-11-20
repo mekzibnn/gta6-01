@@ -83,14 +83,16 @@ export function stageShot(name, game) {
     game.player.car = null;
     game.player.x = game.city.places.marina.x + 60;
     game.player.y = game.city.places.marina.y + 40;
-    game.player.angle = -Math.PI / 2;
+    // Face west toward the Marina and the sea: the backdrop is water and
+    // the marina, not a blank building facade.
+    game.player.angle = Math.PI;
     game.player.cash = 1250;
     game.player.health = 92;
     game.clock = 11 * 60 + 20;
     game.respect = 800;
     game.radio = 0;
     game.audio.setStation(0);
-    game.shotCam = { dist: 170, height: 95, fov: 60 };
+    game.shotCam = { dist: 160, height: 130, fov: 60 };
     game.crew = [
       createCrewMember('Dante', game.player.x - 50, game.player.y + 40, '#e8b98a', '#e74c3c'),
       createCrewMember('Rosa', game.player.x + 40, game.player.y - 60, '#f1c27d', '#2ecc71'),
@@ -112,12 +114,15 @@ export function stageShot(name, game) {
     game.respect = 1600;
     game.radio = 2;
     game.audio.setStation(2);
-    game.shotCam = { dist: 320, height: 150, fov: 64 };
+    game.shotCam = { dist: 300, height: 170, fov: 62 };
     game.heli = createHelicopter(game.player.x, game.player.y);
     addPoliceChase(game, 1, 200);
     game.objectiveText = 'Lose the SCPD — reach Spray & Go';
     game.missionTarget = game.city.places.spray;
     autopilotDrive(game, 1.5);
+    // Park Air One ahead-left of the player: the chase reads better with
+    // the helicopter in the frame, not just in the HUD.
+    if (game.heli) { game.heli.x = game.player.x + 250; game.heli.y = game.player.y - 120; }
     return { screen: 'play' };
   }
   if (scene === 'drive') {
@@ -129,7 +134,7 @@ export function stageShot(name, game) {
     game.respect = 100;
     game.radio = 1;
     game.audio.setStation(1);
-    game.shotCam = { dist: 300, height: 140, fov: 62 };
+    game.shotCam = { dist: 280, height: 150, fov: 62 };
     game.objectiveText = 'Cruise Solmar — next job: Special Delivery';
     autopilotDrive(game, 3.5);
     return { screen: 'play' };
@@ -138,8 +143,9 @@ export function stageShot(name, game) {
   // with Air One overhead. The road ahead is clear now (landmarks sit inside
   // blocks), so the car actually accelerates; the police start close and one
   // cuts in ahead, and the autopilot is short so the whole pack stays in
-  // the frame.
-  putPlayerInCar(game, 'sport', 1350, 950, 0);
+  // the frame. Leo's car is painted bright red so it reads as the hero.
+  const coverCar = putPlayerInCar(game, 'sport', 1350, 950, 0);
+  coverCar.paint = '#e74c3c';
   game.player.cash = 1890;
   game.player.health = 84;
   game.player.wanted = 4;
@@ -149,7 +155,7 @@ export function stageShot(name, game) {
   game.respect = 1600;
   game.radio = 0;
   game.audio.setStation(0);
-  game.shotCam = { dist: 380, height: 190, fov: 66 };
+  game.shotCam = { dist: 230, height: 130, fov: 66 };
   game.heli = createHelicopter(game.player.x, game.player.y);
   game.clock = 17 * 60 + 20;
   game.mission.index = 3;
@@ -159,5 +165,8 @@ export function stageShot(name, game) {
   addPoliceChase(game, 3, 150);
   addPoliceAhead(game, 300, 120);
   autopilotDrive(game, 1.2);
+  // Park Air One ahead-left of the player: the chase reads better with
+  // the helicopter in the frame, not just in the HUD.
+  if (game.heli) { game.heli.x = game.player.x + 250; game.heli.y = game.player.y - 120; }
   return { screen: 'play' };
 }

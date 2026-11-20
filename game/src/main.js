@@ -88,6 +88,7 @@ function createGame(seedValue) {
     raceBest: null,
     shake: 0,
     cameraHigh: false,
+    snapCam: false,
     shotCam: null,
   };
   return game;
@@ -743,6 +744,10 @@ function runShot(name) {
   game.renderer = renderer;
   const scene = stageShot(name, game);
   game.nightFactor = nightFactorFor(game.clock);
+  // Snap the chase camera onto the player at once: the lerped camera would
+  // still be catching up after the two painted frames, leaving the player
+  // car at (or off) the frame edge.
+  game.snapCam = true;
   let painted = 0;
   function paint() {
     renderer.draw(game, scene.screen);
@@ -883,6 +888,7 @@ function runGame() {
         pendingActions = 0;
         return taken;
       },
+      takeSlot: () => input.takeSlot(),
       axes: () => input.axes(),
       running: () => input.running(),
       handbrake: () => input.handbrake(),

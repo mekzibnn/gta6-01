@@ -10,10 +10,10 @@ function panel(ctx, x, y, w, h) {
   ctx.fill();
 }
 
-/** The respect rank for a point total (RESPECT_RANKS is sorted by min). */
+/** The respect rank for a point total (RESPECT_RANKS is sorted by `at`). */
 function respectRank(respect) {
   let rank = RESPECT_RANKS[0];
-  for (const r of RESPECT_RANKS) if (respect >= r.min) rank = r;
+  for (const r of RESPECT_RANKS) if (respect >= r.at) rank = r;
   return rank;
 }
 
@@ -65,7 +65,7 @@ export function drawHud(ctx, game) {
   ctx.fillText(`RESPECT — ${rank.name.toUpperCase()}`, 30, 106);
   ctx.fillStyle = '#222';
   ctx.fillRect(30, 112, 180, 8);
-  const frac = nextRank ? (game.respect - rank.min) / (nextRank.min - rank.min) : 1;
+  const frac = nextRank ? (game.respect - rank.at) / (nextRank.at - rank.at) : 1;
   ctx.fillStyle = '#ffd94a';
   ctx.fillRect(30, 112, 180 * Math.min(1, Math.max(0, frac)), 8);
   ctx.fillStyle = PALETTE.text;
@@ -73,25 +73,20 @@ export function drawHud(ctx, game) {
   const districtKey = game.district ? game.district.key : 'central';
   const standing = game.respectByDistrict ? (game.respectByDistrict[districtKey] || 0) : 0;
   ctx.fillText(`${game.district ? game.district.name : 'Central Solmar'}  •  ${standing} pts`, 218, 106);
-  ctx.fillText(nextRank ? `Next: ${nextRank.name} (${game.respect}/${nextRank.min})` : 'Top of the city', 218, 120);
+  ctx.fillText(nextRank ? `Next: ${nextRank.name} (${game.respect}/${nextRank.at})` : 'Top of the city', 218, 120);
 
-  // Top-right: wanted stars.
-  panel(ctx, VIEW.width - 236, 14, 220, 44);
+  // Top-right: wanted stars, with an Air One warning while the heli is up.
+  panel(ctx, VIEW.width - 236, 14, 220, game.heli ? 72 : 44);
   ctx.fillStyle = PALETTE.text;
   ctx.font = `700 13px ${FONT}`;
   ctx.fillText('WANTED', VIEW.width - 222, 42);
   for (let i = 0; i < 5; i += 1) {
     star(ctx, VIEW.width - 148 + i * 26, 36, 11, i < player.wanted);
   }
-
-  // Air One: the helicopter is above.
   if (game.heli) {
-    panel(ctx, VIEW.width - 236, 66, 220, 26);
     ctx.fillStyle = '#ff5a4e';
     ctx.font = `700 14px ${FONT_DISPLAY}`;
-    ctx.textAlign = 'center';
-    ctx.fillText('AIR ONE OVERHEAD', VIEW.width - 126, 84);
-    ctx.textAlign = 'left';
+    ctx.fillText('AIR ONE OVERHEAD', VIEW.width - 222, 68);
   }
 
   // Top-centre: current objective.

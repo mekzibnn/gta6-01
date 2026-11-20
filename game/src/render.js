@@ -189,7 +189,7 @@ function makeLabelSprite(text) {
   tex.colorSpace = THREE.SRGBColorSpace;
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
   const sprite = new THREE.Sprite(mat);
-  sprite.scale.set(300, 56, 1);
+  sprite.scale.set(240, 45, 1);
   return sprite;
 }
 
@@ -785,17 +785,26 @@ export function createRenderer(gameCanvas, hudCanvas) {
     const shot = game.shotCam;
     const driving = !player.onFoot && !!player.car;
     // C toggles a high camera; screenshots pin their own framing.
+    // The chase camera sits high (buildings run 46-236 tall) so the car is
+    // never hidden behind a rooftop, and looks just ahead of the player so
+    // the car sits in the lower third of the frame, not off its edge.
+    // The angle stays a low chase (~30° down), not a top-down view.
     const high = !shot && game.cameraHigh;
-    const dist = shot ? shot.dist : driving ? 305 : 175;
-    const height = shot ? shot.height : driving ? 150 : 100;
+    const dist = shot ? shot.dist : driving ? 280 : 160;
+    const height = shot ? shot.height : driving ? 170 : 120;
     const camDist = high ? dist * 1.45 : dist;
     const camHeight = high ? height * 1.7 : height;
     const fx = Math.cos(player.angle);
     const fz = Math.sin(player.angle);
+    // A staged shot snaps the camera at once; live play eases into place.
+    const snap = game.snapCam;
+    if (snap) game.snapCam = false;
     tmpV.set(player.x - fx * camDist, camHeight, player.y - fz * camDist);
-    camPos.lerp(tmpV, 1 - Math.exp(-3.4 * dt));
-    tmpV.set(player.x + fx * 90, 24, player.y + fz * 90);
-    camLook.lerp(tmpV, 1 - Math.exp(-5 * dt));
+    if (snap) camPos.copy(tmpV);
+    else camPos.lerp(tmpV, 1 - Math.exp(-3.4 * dt));
+    tmpV.set(player.x + fx * 50, 24, player.y + fz * 50);
+    if (snap) camLook.copy(tmpV);
+    else camLook.lerp(tmpV, 1 - Math.exp(-5 * dt));
     // Crash shake.
     if (game.shake > 0) {
       camPos.x += (Math.random() - 0.5) * game.shake * 14;
