@@ -40,6 +40,26 @@ function lerpColor(a, b, t) {
   );
 }
 
+/**
+ * A soft round glow, drawn once on a canvas and reused as the map for
+ * every point cloud (lamps, stars, rain). Without it, three.js draws each
+ * point as a hard square — a streetlamp near the camera becomes a beige
+ * box floating over the street.
+ */
+function makeGlowTexture() {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.4, 'rgba(255,255,255,0.5)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+
 // Shared materials, cached by colour so the scene stays cheap.
 const materialCache = new Map();
 function lambert(color, opts) {
@@ -519,6 +539,8 @@ export function createRenderer(gameCanvas, hudCanvas) {
   } catch { software = true; }
 
   const renderer = new THREE.WebGLRenderer({ canvas: gameCanvas, antialias: !software });
+  // One soft glow texture for every point cloud in the sky.
+  const glowTex = makeGlowTexture();
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, software ? 1 : 1.5));
   renderer.shadowMap.enabled = !software;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -635,7 +657,8 @@ export function createRenderer(gameCanvas, hudCanvas) {
     });
     lampGeo.setAttribute('position', new THREE.BufferAttribute(lampPos, 3));
     dyn.lampGlow = new THREE.Points(lampGeo, new THREE.PointsMaterial({
-      color: 0xffd9a0, size: 24, transparent: true, opacity: 0, depthWrite: false,
+      color: 0xffd9a0, size: 22, transparent: true, opacity: 0, depthWrite: false,
+      map: glowTex, blending: THREE.AdditiveBlending,
     }));
     dyn.lampGlow.frustumCulled = false;
     scene.add(dyn.lampGlow);
@@ -924,7 +947,7 @@ export function createRenderer(gameCanvas, hudCanvas) {
       }
       geo.setAttribute('position', new THREE.BufferAttribute(dyn.rainPos, 3));
       dyn.rain = new THREE.Points(geo, new THREE.PointsMaterial({
-        color: 0xaec6dd, size: 3, transparent: true, opacity: 0, depthWrite: false,
+        color: 0xaec6dd, size: 3, transparent: true, opacity: 0, depthWrite: false, map: glowTex,
       }));
       dyn.rain.frustumCulled = false;
       scene.add(dyn.rain);
@@ -945,6 +968,7 @@ export function createRenderer(gameCanvas, hudCanvas) {
       geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
       dyn.stars = new THREE.Points(geo, new THREE.PointsMaterial({
         color: 0xffffff, size: 2.2, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false,
+        map: glowTex, blending: THREE.AdditiveBlending,
       }));
       dyn.stars.frustumCulled = false;
       scene.add(dyn.stars);
@@ -1031,7 +1055,8 @@ export function createRenderer(gameCanvas, hudCanvas) {
         dyn.rain.geometry.attributes.position.needsUpdate = true;
       }
     }
-    // Stars fade in with the dark; the moon rides its nightly arc.
+    // Stars fade in with the dark; the moon rides its nightly arc, low
+    // ahead of the player so it stays inside the chase camera's frame.
     if (dyn.stars) dyn.stars.material.opacity = nightF * 0.9;
     const moonAngle = moonAngleFor(game.clock);
     if (dyn.moon) {
@@ -1040,9 +1065,9 @@ export function createRenderer(gameCanvas, hudCanvas) {
       } else {
         dyn.moon.visible = true;
         dyn.moon.position.set(
-          player.x + Math.cos(moonAngle) * 900,
-          350 + Math.sin(moonAngle) * 350,
-          player.y + Math.sin(moonAngle) * 900,
+          player.x + Math.cos(player.angle) * 1100,
+          160 + Math.sin(moonAngle) * 120,
+          player.y + Math.sin(player.angle) * 1100,
         );
         dyn.moon.material.opacity = nightF > 0.05 ? 0.95 : 0;
       }
