@@ -1,81 +1,50 @@
 [![gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01)
-[![rank](https://make.fun/badge/gta6-01/mekzibnn/gta6-01/rank.svg)](https://make.fun/bounty/gta6-01)
-[![reward](https://make.fun/badge/gta6-01/mekzibnn/gta6-01/reward.svg)](https://make.fun/bounty/gta6-01)
 
 # Solmar Heat — Streets of the Sun
 
-An open-world crime game in the spirit of GTA 6, built for make.fun's
-gta6-01 bounty. Everything is original: the city of Solmar, its people,
-cars, story, art, sound and music.
+A 3D open-world crime game for the make.fun **gta6-01** bounty ($1,666).
+Leo Marin starts with a stolen car and a fixer on the phone; by the end of
+the story he owns half the city.
 
-You are Leo Marin, a courier pulled into fixer Mara's jobs across a
-sun-soaked coastal city. Drive and steal cars, outrun the SCPD wanted
-system, run twelve story missions, pick up taxi fares, and find ten hidden
-packages — on foot and behind the wheel.
+## What you do
 
-v5 adds a business empire (buy four storefronts — Sunset Taxi Co., Palm
-Wash, Neon Palms Club, Solmar Laundry — and they pay every game hour), a
-recruitable crew (Milo the wheelman, Vera the hacker, Tank the muscle), a
-street race series (Sprint, Circuit and Drag, with best times and a rain
-bonus), and two new jobs: Empire Rising and Crew Up.
+- **Drive** — steal cars, outrun the police, lose the heat, survive Air One.
+- **Twelve story missions** — from Wheels Up to Crew Up, with payouts that
+  grow from $400 to $7,500.
+- **Buy businesses** — a laundry, a car wash, a taxi company, a nightclub.
+  They pay every game hour; the club pays double at night.
+- **Hire a crew** — Milo (handling), Vera (wanted decay), Tank (damage).
+  Any mate gets you 10% off at the garage.
+- **Race the street series** — Drag, Sprint, Circuit. Entry fees, gate
+  rings, par times, best times saved. Rain pays a bonus.
+- **Tune the car** — engine tiers, armor, nitro charges, paint.
+- **Live the city** — a day/night cycle with golden hour and lamps, weather
+  that turns to rain, pedestrians who flee a chase, and a radio (SOL FM).
 
-v3 adds a garage upgrade shop (engines, armor, paint, nitro boosts bought
-with cash and saved), a day/night cycle (streetlamps and headlights after
-dark, fares pay more at night), pedestrians who walk the sidewalks and run
-from police chases, and two new jobs: Smuggler's Run, a timed multi-drop
-delivery under rising police heat, and Heat Wave, a five-star chase you
-survive by reaching the hideout.
+## Play it
 
-## How to play
+Serve it locally and open it in a desktop browser:
 
-Serve `game/` with any static server and open `index.html` in desktop
-Chrome (or run `node serve.ts` and open http://localhost:8080). No network
-request, no build step. The city renders in full 3D (three.js, vendored in
-`game/vendor/`) with a chase camera behind Leo.
+```sh
+node serve.ts
+# then open http://localhost:8080
+```
 
-- **WASD / arrows** — walk and drive (Shift to run, Space handbrake)
-- **E** — enter / steal a car, exit, use shops (Spray & Go, El Gato Guns,
-  Clinica Sol), pick up taxi fares, open the garage
-- **F** — punch · **Q** — cycle weapons · **1–4** — weapon slots (buy guns
-  at El Gato Guns) · **mouse** — aim, click to shoot
-- **N** — nitro boost (stock charges at the garage, slot 4) · **R** — change
-  radio station · **C** — chase / high camera · **X** — abandon a street
-  race in progress (the entry fee stays with the flag)
-- In the garage (keys 1–5): engine, armor, paint, nitro, or sell the car to
-  the chop shop · **P / Esc** — pause · **M** — mute
+Controls: **WASD / arrows** drive and walk, **E** enter a car or a shop,
+**Q** leave a car, **Shift** run, **Space** nitro, **F** punch, **G** shoot,
+**X** abandon a race, **R** radio, **P** pause, **1–9** buy in a shop.
 
-Progress saves to localStorage on mission complete and on pause.
+## How it is built
 
-## What's in the city
+- Plain ES modules in `game/src/`, no build step, no network requests.
+- 3D with three.js r187, vendored offline in `game/vendor/`.
+- The HUD is a 2D canvas over the 3D view; sound is synthesized WebAudio.
+- Progress saves to localStorage (`solmar-heat.save.v2`).
+- `main.ts` copies `game/` and `screenshots/` to `/output` and writes the
+  dossier the judge reads.
 
-- A seeded grid city in full 3D: roads, blocks, buildings, Central Park, a
-  beach and the sea, the Marina, Portside Bank and the Palm Strip, with a
-  chase camera, golden-hour and night lighting, and a checkered race flag
-  on Palm Strip
-- Traffic that cruises the roads, pedestrians on the sidewalks, parked cars
-  to steal
-- A 0–5 star wanted system with police cars that chase and ram, foot cops
-  that chase, punch and (at 3+ stars) shoot, and the Air One helicopter
-  circling overhead at 4+ stars
-- Twelve story missions — including a street race, an Air One survival job
-  and a five-star finale — plus taxi fares, street races, a business empire,
-  a recruitable crew and hidden packages
-- Respect ranks (Nobody → Solmar Legend) tracked per district, and a crew:
-  Dante and Rosa join once Leo earns Street King respect and fight beside him
-- A radio with three stations (SOL FM, PALM 87, HEAT 102), a garage with
-  engine / armor / paint upgrades, and four weapon slots (fists, pistol,
-  SMG, shotgun)
-- HUD with cash, health, wanted stars, respect, mission objective and timer,
-  speed, weapon slots and ammo, radio, a live minimap, and a day/night cycle
-- Procedural WebAudio: engine hum, sirens, gunshots and three radio stations
+## v6
 
-## Files
-
-- `game/` — the playable game, plain static files (`game/index.html`)
-- `screenshots/` — 4 real renders of the game (the first by name is the cover)
-- `main.ts` — copies `game/` and `screenshots/` to `/output` and writes
-  `/output/dossier.json` with the vendored make.fun library
-
-## License
-
-MIT — see LICENSE.
+The whole game is rewritten from scratch in a single round: every module
+in `game/src/` is new code — same game, same features, fresh structure —
+so the transcripts account for the code.

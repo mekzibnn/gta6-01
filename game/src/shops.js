@@ -1,353 +1,147 @@
-// from, what the HUD promises, and what happens when Leo walks in. The
-// main loop no longer carries a chain of ifs for each shop; it asks the
-// registry what is in range and lets that entry run. Priority is the
-// order of the list: the race flag beats the gun shop, the garage beats
-// the spray shop, and so on.
-//
-// A shop's action gets `game` and a `ctx` of helpers the main loop owns
-// (toasts, announcements, particles, the place and ped finders), so this
-// module never reaches back into the loop. Nothing here changes what a
-// shop costs or does — the registry only changes how the choice is made.
-import { WEAPONS, WANTED } from './config.js';
-import { startRace, startTaxi } from './missions.js';
-import { buyVenture, ventureOwned, ventureById } from './empire.js';
-import { hireMate, crewCheapestAvailable } from './crew.js';
-import { startRace as startStreetRace, nextRaceCard } from './races.js';
+// Shops — where Leo spends his money (v6 rewrite).
+// Every storefront Leo can walk into: the garage that tunes his car, the
+// gun store that sells weapons and ammo, the diner that heals him, and the
+// four businesses he can buy outright. A shop is a spot on the map plus a
+// menu; the HUD shows the menu when Leo stands close, and the game applies
+// the purchase. Buying a business happens at its own storefront.
 
-/** One shop: where it is, which seat it serves, its promise, its deed. */
-const SHOP_DEFS = [
-  {
-    id: 'race',
-    place: 'race',
-    radius: 110,
-    modes: ['foot', 'car'],
-    prompt: () => 'Street Race — E to start',
-    blurb: 'Flag to flag across Solmar. Fastest through the checkpoints wins.',
-    action(game, ctx) {
-      if (game.race.active) return;
-      const first = startRace(game.race, game.player, game.city, game.random);
-      ctx.toast(game, `STREET RACE — reach ${first.label} first!`, 3, '#ffd94a');
-      game.audio.blip();
-    },
-  },
-  {
-    id: 'gunshop',
-    place: 'gunshop',
-    radius: 90,
-    modes: ['foot'],
-    prompt(game) {
-      const player = game.player;
-      if (player.weapon === 'fists') return 'El Gato Guns — pick a gun first (Q)';
-      return `El Gato Guns — ${WEAPONS[player.weapon].name} ammo $${WANTED.ammoCost}`;
-    },
-    blurb: 'Ammo for the gun in hand, or a new piece when the wallet allows.',
-    action(game, ctx) {
-      const player = game.player;
-      // Buy ammo for the current weapon, or the weapon itself (3/4 at the shop).
-      const spec = WEAPONS[player.weapon];
-      if (player.weapon !== 'fists' && player.cash >= WANTED.ammoCost) {
-        player.cash -= WANTED.ammoCost;
-        player.ammo[player.weapon] = (player.ammo[player.weapon] || 0) + spec.ammo;
-        game.audio.coin();
-        ctx.toast(game, `${spec.name} ammo +${spec.ammo}`, 2);
-      } else if (player.weapon === 'fists') {
-        ctx.toast(game, 'Pick a gun first (Q) — ammo $40 · 3: SMG $600 · 4: Shotgun $900', 3);
-      } else {
-        ctx.toast(game, 'Not enough cash for ammo', 2);
-      }
-    },
-  },
-  {
-    id: 'clinic',
-    place: 'clinic',
-    radius: 90,
-    modes: ['foot'],
-    prompt: () => `Clinica Sol — patch up $${WANTED.healCost}`,
-    blurb: 'Full health, no questions asked, cash up front.',
-    action(game, ctx) {
-      const player = game.player;
-      if (player.cash >= WANTED.healCost) {
-        player.cash -= WANTED.healCost;
-        player.health = 100;
-        game.audio.coin();
-        ctx.toast(game, 'Patched up — full health', 2);
-      } else {
-        ctx.toast(game, 'Not enough cash to heal', 2);
-      }
-    },
-  },
-  {
-    id: 'garage',
-    place: 'garage',
-    radius: 110,
-    modes: ['car'],
-    prompt: () => "Mara's Garage — E for upgrades",
-    blurb: 'Engines, armor, paint and nitro, fitted while you wait.',
-    action(game, ctx) {
-      game.garageOpen = true;
-      game.audio.blip();
-      ctx.announce("Mara's Garage. 1 engine, 2 armor, 3 paint, 4 nitro, 5 sell the car, E to leave.");
-    },
-  },
-  {
-    id: 'spray',
-    place: 'spray',
-    radius: 110,
-    modes: ['car'],
-    prompt(game) {
-      if (game.player.wanted <= 0) return 'Spray & Go — no heat to clear';
-      return `Spray & Go — lose the heat $${WANTED.sprayCost}`;
-    },
-    blurb: 'Fresh paint and a new plate. The SCPD forgets the car entirely.',
-    // No heat, no sale: the E key passes through to the next shop (a taxi
-    // fare on the same curb still gets picked up).
-    available: (game) => game.player.wanted > 0,
-    action(game, ctx) {
-      const player = game.player;
-      if (player.wanted <= 0) return;
-      if (player.cash >= WANTED.sprayCost) {
-        player.cash -= WANTED.sprayCost;
-        player.wanted = 0;
-        player.wantedTimer = 0;
-        game.policeCars = [];
-        game.cops = [];
-        game.audio.coin();
-        ctx.toast(game, 'Clean! Fresh paint, no heat', 2.5);
-        ctx.particles(game, player.x, player.y, '#2fa36b', 14, 90);
-      } else {
-        ctx.toast(game, 'Respray costs $150', 2);
-      }
-    },
-  },
-  {
-    id: 'taxi',
-    radius: 0,
-    modes: ['car'],
-    prompt: () => 'Taxi fare — E to pick up',
-    blurb: 'Someone needs a ride across town, and they pay in cash.',
-    // The taxi has no fixed place: it is a pedestrian waving on the curb.
-    find(game, ctx) {
-      return ctx.nearestTaxiPed(game) || null;
-    },
-    action(game, ctx, ped) {
-      ped.health = 0;
-      const dest = startTaxi(game.mission, game.player, game.city, game.random);
-      ctx.toast(game, `Fare to ${dest.label} — 90 seconds`, 2.5);
-      game.audio.blip();
-    },
-  },
-  {
-    id: 'biz-taxi',
-    place: 'taxioffice',
-    radius: 110,
-    modes: ['foot', 'car'],
-    prompt(game) {
-      const spec = ventureById('sunset-taxi');
-      if (ventureOwned(game.empire, 'sunset-taxi')) return 'Sunset Taxi Co. — yours, $90/hr';
-      return `Sunset Taxi Co. — buy the business $${spec.price}`;
-    },
-    blurb: 'A cab fleet that pays every hour, even while you sleep.',
-    action(game, ctx) {
-      const player = game.player;
-      const result = buyVenture(game.empire, 'sunset-taxi', player.cash);
-      if (result.ok) {
-        player.cash = result.cash;
-        game.audio.deal();
-        ctx.toast(game, 'Sunset Taxi Co. is yours — it pays $90 an hour', 3, '#7dff8a');
-      } else if (result.reason === 'already-owned') {
-        ctx.toast(game, 'You already own Sunset Taxi Co.', 2);
-      } else {
-        ctx.toast(game, 'Sunset Taxi Co. costs $1200', 2);
-      }
-    },
-  },
-  {
-    id: 'biz-laundry',
-    place: 'laundry',
-    radius: 110,
-    modes: ['foot', 'car'],
-    prompt(game) {
-      const spec = ventureById('solmar-laundry');
-      if (ventureOwned(game.empire, 'solmar-laundry')) return 'Solmar Laundry — yours, $35/hr';
-      return `Solmar Laundry — buy the business $${spec.price}`;
-    },
-    blurb: 'Washers humming next to the market; small money, steady money.',
-    action(game, ctx) {
-      const player = game.player;
-      const result = buyVenture(game.empire, 'solmar-laundry', player.cash);
-      if (result.ok) {
-        player.cash = result.cash;
-        game.audio.deal();
-        ctx.toast(game, 'Solmar Laundry is yours — it pays $35 an hour', 3, '#7dff8a');
-      } else if (result.reason === 'already-owned') {
-        ctx.toast(game, 'You already own Solmar Laundry.', 2);
-      } else {
-        ctx.toast(game, 'Solmar Laundry costs $500', 2);
-      }
-    },
-  },
-  {
-    id: 'biz-club',
-    place: 'club',
-    radius: 110,
-    modes: ['foot', 'car'],
-    prompt(game) {
-      const spec = ventureById('neon-palms');
-      if (ventureOwned(game.empire, 'neon-palms')) return 'Neon Palms Club — yours, $180/hr';
-      return `Neon Palms Club — buy the business $${spec.price}`;
-    },
-    blurb: 'The basement club under the neon sign; it doubles after dark.',
-    action(game, ctx) {
-      const player = game.player;
-      const result = buyVenture(game.empire, 'neon-palms', player.cash);
-      if (result.ok) {
-        player.cash = result.cash;
-        game.audio.deal();
-        ctx.toast(game, 'Neon Palms Club is yours — it pays $180 an hour', 3, '#7dff8a');
-      } else if (result.reason === 'already-owned') {
-        ctx.toast(game, 'You already own Neon Palms Club.', 2);
-      } else {
-        ctx.toast(game, 'Neon Palms Club costs $2500', 2);
-      }
-    },
-  },
-  {
-    id: 'biz-wash',
-    place: 'wash',
-    radius: 110,
-    modes: ['foot', 'car'],
-    prompt(game) {
-      const spec = ventureById('palm-wash');
-      if (ventureOwned(game.empire, 'palm-wash')) return 'Palm Wash — yours, $60/hr';
-      return `Palm Wash — buy the business $${spec.price}`;
-    },
-    blurb: 'A drive-through wash off Palm Strip, always a queue.',
-    action(game, ctx) {
-      const player = game.player;
-      const result = buyVenture(game.empire, 'palm-wash', player.cash);
-      if (result.ok) {
-        player.cash = result.cash;
-        game.audio.deal();
-        ctx.toast(game, 'Palm Wash is yours — it pays $60 an hour', 3, '#7dff8a');
-      } else if (result.reason === 'already-owned') {
-        ctx.toast(game, 'You already own Palm Wash.', 2);
-      } else {
-        ctx.toast(game, 'Palm Wash costs $800', 2);
-      }
-    },
-  },
-  {
-    id: 'crewbar',
-    place: 'crewbar',
-    radius: 110,
-    modes: ['foot'],
-    prompt(game) {
-      const next = crewCheapestAvailable(game.roster, game.player.cash);
-      if (!next) return 'The Overpass Bar — the crew is full';
-      return `The Overpass Bar — hire ${next.name} ($${next.cost})`;
-    },
-    blurb: 'Specialists drink here. Hire the cheapest one on the spot.',
-    action(game, ctx) {
-      const player = game.player;
-      const next = crewCheapestAvailable(game.roster, player.cash);
-      if (!next) {
-        ctx.toast(game, 'The crew is full — everyone is hired', 2);
-        return;
-      }
-      const result = hireMate(game.roster, next.id, player.cash);
-      if (result.ok) {
-        player.cash = result.cash;
-        game.audio.deal();
-        ctx.toast(game, `${next.name} joined the crew — ${next.perkLabel}`, 3, '#7dff8a');
-      } else {
-        ctx.toast(game, `${next.name} costs $${next.cost}`, 2);
-      }
-    },
-  },
-  {
-    id: 'dragstrip',
-    place: 'dragstrip',
-    radius: 110,
-    modes: ['car'],
-    prompt(game) {
-      if (game.streetRaces && game.streetRaces.running) return 'Street series — race in progress';
-      const card = nextRaceCard(game.streetRaces);
-      return `Portside Drag Strip — ${card.name}, entry $${card.fee}`;
-    },
-    blurb: 'The street series: three events, gates in order, prize at the flag.',
-    action(game, ctx) {
-      if (game.streetRaces && game.streetRaces.running) return;
-      const card = nextRaceCard(game.streetRaces);
-      const result = startStreetRace(game.streetRaces, card.id, game.player.cash);
-      if (result.ok) {
-        game.player.cash = result.cash;
-        // The clock for the race is game time, not wall time, so the
-        // series stays deterministic across seeds and replays.
-        game.streetRaces.running.startedAt = game.time;
-        game.audio.blip();
-        ctx.toast(game, `${card.name} — ${card.gates} gates, first gate ahead!`, 3, '#ffd94a');
-      } else {
-        ctx.toast(game, `${card.name} entry is $${card.fee}`, 2);
-      }
-    },
-  },
-];
+import { VENTURES, MATES, SERIES, WEAPONS, GARAGE } from './config.js';
+import { ventureDef } from './empire.js';
+import { mateDef } from './crew.js';
+import { raceDef } from './races.js';
 
-/** The first shop in range for this seat, with what matched it, or null. */
-function matchShop(game, def, ctx) {
-  if (def.available && !def.available(game)) return null;
-  if (def.find) {
-    const handle = def.find(game, ctx);
-    return handle ? { def, handle } : null;
+export function initShops(city) {
+  return [
+    { id: 'garage', kind: 'garage', label: 'Garage', x: city.spots.garage.x, z: city.spots.garage.z, radius: 12 },
+    { id: 'gunstore', kind: 'guns', label: 'Gun Store', x: 148, z: 148, label2: 'Ammu-Nation', radius: 10 },
+    { id: 'diner', kind: 'food', label: 'Diner', x: -148, z: -148, radius: 10 },
+    { id: 'clothes', kind: 'clothes', label: 'Clothes', x: 24, z: 196, radius: 10 },
+    { id: 'laundry-shop', kind: 'venture', venture: 'solmar-laundry', label: 'Solmar Laundry', x: city.spots.laundry.x, z: city.spots.laundry.z, radius: 12 },
+    { id: 'wash-shop', kind: 'venture', venture: 'palm-wash', label: 'Palm Wash', x: city.spots.carWash.x, z: city.spots.carWash.z, radius: 12 },
+    { id: 'taxi-shop', kind: 'venture', venture: 'sunset-taxi', label: 'Sunset Taxi Co.', x: city.spots.taxiOffice.x, z: city.spots.taxiOffice.z, radius: 12 },
+    { id: 'club-shop', kind: 'venture', venture: 'neon-palms', label: 'Neon Palms Club', x: city.spots.nightclub.x, z: city.spots.nightclub.z, radius: 12 },
+    { id: 'crew-office', kind: 'crew', label: 'Crew Office', x: -24, z: -196, radius: 12 },
+    { id: 'race-office', kind: 'races', label: 'Race Office', x: 0, z: 264, radius: 12 },
+  ];
+}
+
+export function shopNear(shops, x, z) {
+  let best = null;
+  let bestD = Infinity;
+  for (const s of shops) {
+    const dx = x - s.x;
+    const dz = z - s.z;
+    const d = Math.sqrt(dx * dx + dz * dz);
+    if (d < s.radius && d < bestD) { bestD = d; best = s; }
   }
-  if (def.place && ctx.nearPlace(game, def.place, def.radius)) {
-    return { def, handle: def.place };
+  return best;
+}
+
+export function shopTitle(shop) {
+  if (shop.kind === 'venture') {
+    const def = ventureDef(shop.venture);
+    return def ? `${def.label} — $${def.price}` : shop.label;
   }
-  return null;
+  return shop.label;
 }
 
-/** The shops in range right now, in priority order, for this seat. */
-export function shopsInRange(game, onFoot, ctx) {
-  const mode = onFoot ? 'foot' : 'car';
-  const found = [];
-  for (const def of SHOP_DEFS) {
-    if (!def.modes.includes(mode)) continue;
-    const match = matchShop(game, def, ctx);
-    if (match) found.push(match);
+export function ventureMenu(empire, ventureId) {
+  const def = ventureDef(ventureId);
+  if (!def) return [];
+  const held = empire.owned[ventureId];
+  if (held) {
+    return [
+      { key: 'upgrade', label: `Upgrade to level ${held.level + 1}`, cost: Math.round(def.price * 0.6 * held.level) },
+      { key: 'leave', label: 'Leave' },
+    ];
   }
-  return found;
+  return [
+    { key: 'buy', label: `Buy ${def.label} — $${def.price} ($${def.hourly}/hr)`, cost: def.price },
+    { key: 'leave', label: 'Leave' },
+  ];
 }
 
-/**
- * Run the E key: the first shop in range for this seat does its deed.
- * Returns the shop id, or null when nothing was in range.
- */
-export function enterShop(game, onFoot, ctx) {
-  const matches = shopsInRange(game, onFoot, ctx);
-  if (!matches.length) return null;
-  const { def, handle } = matches[0];
-  def.action(game, ctx, handle);
-  return def.id;
+export function crewMenu(crew) {
+  const items = [];
+  for (const def of MATES.list) {
+    const hired = crew.hired[def.id];
+    items.push({
+      key: `hire-${def.id}`,
+      label: hired ? `${def.label} — hired` : `Hire ${def.label} (${def.role}) — $${def.price}`,
+      cost: hired ? 0 : def.price,
+      hired: !!hired,
+    });
+  }
+  items.push({ key: 'leave', label: 'Leave' });
+  return items;
 }
 
-/**
- * What the E key would do right now, as a HUD line — or null when no shop
- * is in range. The loop shows this while Leo is free-roaming, so the
- * player learns the shops without a manual.
- */
-export function shopPrompt(game, onFoot, ctx) {
-  const matches = shopsInRange(game, onFoot, ctx);
-  if (!matches.length) return null;
-  const { def, handle } = matches[0];
-  return `E — ${def.prompt(game, handle)}`;
+export function raceMenu(races) {
+  const items = [];
+  for (const def of SERIES.list) {
+    const best = races.best[def.id];
+    items.push({
+      key: `race-${def.id}`,
+      label: `${def.label} — $${def.fee} entry, $${def.prize} prize${typeof best === 'number' ? ` (best ${best}s)` : ''}`,
+      cost: def.fee,
+    });
+  }
+  items.push({ key: 'leave', label: 'Leave' });
+  return items;
 }
 
-/** The shop registry itself, for the dossier and for tests. */
-export function shopList() {
-  return SHOP_DEFS.map((def) => ({
-    id: def.id,
-    place: def.place || 'curb',
-    modes: def.modes.join('+'),
-    blurb: def.blurb,
-  }));
+export function gunMenu(player) {
+  const items = [];
+  for (let i = 1; i < WEAPONS.slots.length; i += 1) {
+    const w = WEAPONS.slots[i];
+    items.push({
+      key: `gun-${i}`,
+      label: `${w.name} — $${w.price} (${w.ammo} rounds)`,
+      cost: w.price,
+      owned: player.weapon >= i,
+    });
+  }
+  items.push({ key: 'ammo', label: 'Ammo refill — $120', cost: 120 });
+  items.push({ key: 'leave', label: 'Leave' });
+  return items;
+}
+
+export function foodMenu(player) {
+  return [
+    { key: 'meal', label: `Eat a meal — $25 (heal to full)`, cost: 25, hurt: player.health < 100 },
+    { key: 'leave', label: 'Leave' },
+  ];
+}
+
+export function garageMenu(garage, crew) {
+  const items = [];
+  const nextEngine = GARAGE.engines[garage.engine + 1];
+  if (nextEngine) {
+    items.push({ key: 'engine', label: `${nextEngine.name} — $${Math.round(nextEngine.price * (crewCount(crew) > 0 ? 0.9 : 1))}`, cost: Math.round(nextEngine.price * (crewCount(crew) > 0 ? 0.9 : 1)) });
+  }
+  const nextArmor = GARAGE.armor[garage.armor + 1];
+  if (nextArmor) {
+    items.push({ key: 'armor', label: `${nextArmor.name} — $${Math.round(nextArmor.price * (crewCount(crew) > 0 ? 0.9 : 1))}`, cost: Math.round(nextArmor.price * (crewCount(crew) > 0 ? 0.9 : 1)) });
+  }
+  items.push({ key: 'nitro', label: `Nitro charge — $${Math.round(GARAGE.nitroPrice * (crewCount(crew) > 0 ? 0.9 : 1))}`, cost: Math.round(GARAGE.nitroPrice * (crewCount(crew) > 0 ? 0.9 : 1)) });
+  for (let i = 0; i < 5; i += 1) {
+    items.push({ key: `paint-${i}`, label: `Paint ${i + 1} — $250`, cost: 250 });
+  }
+  items.push({ key: 'leave', label: 'Leave' });
+  return items;
+}
+
+function crewCount(crew) {
+  return Object.keys(crew.hired || {}).filter((id) => crew.hired[id].active).length;
+}
+
+export function shopPrompt(shop, game) {
+  // Returns the menu lines the HUD shows for this shop, given the game.
+  if (shop.kind === 'venture') return ventureMenu(game.empire, shop.venture);
+  if (shop.kind === 'crew') return crewMenu(game.roster);
+  if (shop.kind === 'races') return raceMenu(game.streetRaces);
+  if (shop.kind === 'garage') return garageMenu(game.garage, game.roster);
+  if (shop.kind === 'guns') return gunMenu(game.player);
+  if (shop.kind === 'food') return foodMenu(game.player);
+  return [{ key: 'leave', label: 'Leave' }];
 }

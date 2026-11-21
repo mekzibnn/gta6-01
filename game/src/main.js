@@ -1,1025 +1,853 @@
-// stages that scene instead of running the loop, paints it twice and sets
-// window.__shotReady for a screenshot.
-import { STEP, WANTED, POLICE, TRAFFIC, PED, HELI, RESPECT_RANKS, RESPECT_MISSION, RESPECT_RACE, RESPECT_TAXI, RESPECT_PACKAGE, WEAPONS, WEAPON_ORDER, RACES, DAYNIGHT, STREET_SERIES } from './config.js';
-import { createRandom, pick, range, shuffle } from './random.js';
-import { buildCity, nearestRoadPoint, groundAt, resolveCircle, districtAt } from './city.js';
-import { createCar, spawnParkedCar, spawnTrafficCar, stepDrivenCar, stepTrafficCar, stepPoliceCar, createHelicopter, stepHelicopter } from './vehicles.js';
-import { createPlayer, stepPlayerOnFoot, punch, shoot, spawnPed, spawnCop, stepCop, createCrewMember, stepCrew } from './actors.js';
-import { buyUpgrade, useNitro, createUpgradeState, sanitizeUpgrades, raceRewardMultiplier, bustedPenalty, sellCar } from './upgrades.js';
-import { createDayNight, stepDayNight, syncDayNight, nightPayMultiplier, PHASE_TOASTS } from './daynight.js';
-import { createWeather, stepWeather, weatherTip, raceRainBonus } from './weather.js';
-import { createStats, sanitizeStats, trackDrive, trackEarn, trackBusinessIncome, trackSeriesWin, trackMission, trackRace, trackRaceBest, trackHit, trackBust, trackTime } from './stats.js';
-import { newEmpire, tickVentureIncome, serializeEmpire, restoreEmpire } from './empire.js';
-import { newCrew, crewHandlingFactor, crewCooldownFactor, crewDamageFactor, serializeCrew, restoreCrew } from './crew.js';
-import { newRaces, raceRunning, raceGatePassed, finishRace as finishStreetRace, raceById, abandonRace, serializeRaces, restoreRaces, RACE_GATE_KEYS } from './races.js';
-import { stepPeds } from './peds.js';
-import { enterShop, shopPrompt } from './shops.js';
-import {
-  createMissionState, currentMission, currentStep, startMission, failMission,
-  stepMission, stepTaxi, finishTaxi, checkPackages, packagesLeft,
-  createRaceState, stepRace, finishRace, currentRaceCheckpoint,
-} from './missions.js';
-import { createAudio } from './audio.js';
-import { createRenderer, SCREEN_TITLE, SCREEN_PLAY, SCREEN_PAUSED, SCREEN_BUSTED, SCREEN_WASTED, SCREEN_WIN } from './render.js';
-import { drawHud } from './hud.js';
-import { saveGame, loadSave, clearSave, hasSave } from './save.js';
-import { stageShot } from './shots.js';
-import {
-  ACTION_ENTER, ACTION_PUNCH, ACTION_PAUSE, ACTION_CONFIRM, ACTION_WEAPON, ACTION_RADIO, ACTION_CAMERA, ACTION_NITRO, ACTION_ABANDON, createInput,
-} from './input.js';
+// Solmar Heat — the game (v6 rewrite).
+// main.js boots the world and runs the loop: read input, move the player
+// and the cars, run the traffic and the crowd, chase with the cops and the
+// heli, tick the missions, the empire, the crew and the races, turn the
+// day, and draw it all. It also exposes window.__game — the debug handle
+// the playtest and the screenshots drive the game through.
 
-const MAX_FRAME = 0.25;
+import * as THREE from 'three';
+import { ECONOMY, GARAGE, HEAT, RESPECT, WORLD, WEAPONS } from './config.js';
+import { makeDice, seedFromClock } from './random.js';
+import { readCareer, writeCareer, blankCareer } from './save.js';
+import { initLedger, ledgerDrive, ledgerEarn, ledgerSpend, ledgerBust, ledgerRace, ledgerMission, ledgerVenture, ledgerMate, ledgerTopSpeed } from './stats.js';
+import { initCity, districtAt, ventureSpot, gateChain, SPOTS } from './city.js';
+import { MODELS, spawnCar, spawnTraffic, advanceCar, advanceTrafficCar, carDistance, carsCollide, pushApart, damageCar, kmh, applyEngine } from './vehicles.js';
+import { spawnPlayer, spawnWalker, spawnCop, spawnMate, advanceWalker, advanceCop, copBusts, advanceMate, matePunch, playerPunch, playerShoot, hurtPlayer, healPlayer, movePlayer } from './actors.js';
+import { initCrowd, tickCrowd, crowdNear, crowdOnRoute, scareCrowd, shopperSpots, tickShoppers } from './peds.js';
+import { initClock, tickClock, clockLabel, nightFareBoost } from './daynight.js';
+import { initWeather, tickWeather, isRaining, rainBonus } from './weather.js';
+import { initAudio, startAudio, dealSound, cashSound, punchSound, shotSound, sirenSound, bustSound, missionSound, radioTick, setRadio } from './audio.js';
+import { initEmpire, ventureDef, ventureHourly, empireHourly, buyVenture, upgradeVenture, accrueEmpire, serializeEmpire, restoreEmpire } from './empire.js';
+import { initCrew, mateDef, hireMate, crewHandling, crewDecay, crewDamage, crewGarageRate, crewNames, serializeCrew, restoreCrew } from './crew.js';
+import { initRaces, raceDef, startRace, raceTick, raceGatePassed, raceFinished, finishRace, abandonRace, serializeRaces, restoreRaces } from './races.js';
+import { initGarage, engineCost, buyEngine, armorCost, buyArmor, armorSoak, nitroCost, buyNitro, useNitro, buyPaint, garageSummary } from './upgrades.js';
+import { initShops, shopNear, shopPrompt, ventureMenu, crewMenu, raceMenu, gunMenu, foodMenu, garageMenu } from './shops.js';
+import { MISSIONS, initMissions, currentMission, currentStep, missionReward, missionName, missionBrief, startMission, stepDone, completeMission, stepMet, tickMission } from './missions.js';
+import { initHud, resizeHud, showBanner, showToast, showPrompt, drawHud } from './hud.js';
+import { initRenderer, makeGateMeshes, makeVentureMarkers, renderFrame, resizeRenderer, snapCamera } from './render.js';
+import { initInput, readKeys } from './input.js';
 
-/** The street series runs its gates in this order, first to last. */
-const STREET_GATE_KEYS = RACE_GATE_KEYS;
+const SAVE_VERSION = 2;
 
-const params = new URLSearchParams(window.location.search);
-const shot = params.get('shot');
-const seedParam = Number.parseInt(params.get('seed') ?? '', 10);
-const seed = Number.isInteger(seedParam) ? seedParam : 1;
-
-const canvas = document.getElementById('game');
-const hudCanvas = document.getElementById('hud');
-const statusEl = document.getElementById('status');
-
-function announce(message) {
-  statusEl.textContent = message;
-}
-
-/** Is the player within `radius` of a named place? */
-function nearPlace(game, key, radius) {
-  const place = game.city.places[key];
-  return Math.hypot(game.player.x - place.x, game.player.y - place.y) < radius;
-}
-
-/** The nearest taxi-waiting pedestrian in range, or undefined. */
-function nearestTaxiPed(game) {
-  const player = game.player;
-  return game.peds.find((p) => p.taxi && p.health > 0 && Math.hypot(p.x - player.x, p.y - player.y) < 60);
-}
-
-function setToast(game, text, seconds, color) {
-  game.toast = text;
-  game.toastTime = seconds || 3;
-  game.toastColor = color || '';
-}
-
-// ---------------------------------------------------------------------------
-// World creation
-// ---------------------------------------------------------------------------
-
-function createGame(seedValue) {
-  const random = createRandom(seedValue);
-  const city = buildCity(random);
-  const player = createPlayer(city.places.hideout.x, city.places.hideout.y);
-  player.shirt = '#e84a4a';
-  const cars = [];
-  for (let i = 0; i < 10; i += 1) cars.push(spawnParkedCar(random, city));
-  for (let i = 0; i < TRAFFIC.count; i += 1) cars.push(spawnTrafficCar(random));
-  const peds = [];
-  for (let i = 0; i < PED.count; i += 1) peds.push(spawnPed(random, city));
-  const game = {
-    seed: seedValue,
-    random,
-    city,
-    player,
-    cars,
-    policeCars: [],
+function buildWorld(seed) {
+  const dice = makeDice(seed);
+  const career = readCareer();
+  const city = initCity(seed);
+  const clock = initClock(17.3);
+  const weather = initWeather(dice);
+  const player = spawnPlayer(SPOTS.hideout.x, SPOTS.hideout.z);
+  player.cash = career.cash;
+  player.respect = career.respect;
+  const car = spawnCar('sedan', SPOTS.hideout.x + 6, SPOTS.hideout.z, 0);
+  const traffic = spawnTraffic(dice, city, 26);
+  const crowd = initCrowd(dice, city, WORLD.pedCount);
+  const shoppers = shopperSpots(dice, city);
+  const empire = restoreEmpire(career.empire || null);
+  const roster = restoreCrew(career.roster || null);
+  const streetRaces = restoreRaces(career.streetRaces || null);
+  const garage = { engine: career.garage.engine, armor: career.garage.armor, nitro: career.garage.nitro, paint: career.garage.paint };
+  const missions = initMissions();
+  missions.index = 0;
+  missions.done = (career.missionsDone || []).slice();
+  // Resume after the missions already done (12 means every job is done).
+  missions.index = Math.min(missions.done.length, MISSIONS.length);
+  const ledger = initLedger();
+  ledger.timePlayed = career.timePlayed || 0;
+  ledger.businessesBought = Object.keys(empire.owned).length;
+  ledger.crewHired = Object.keys(roster.hired).length;
+  ledger.racesWon = streetRaces.won;
+  ledger.missionsDone = missions.done.length;
+  const audio = initAudio();
+  const shops = initShops(city);
+  const mates = [];
+  for (const id of Object.keys(roster.hired)) {
+    if (roster.hired[id].active) mates.push(spawnMate(id, player.x + 4, player.z + 4));
+  }
+  return {
+    seed, dice, career, city, clock, weather, player, car, traffic, crowd, shoppers,
+    empire, roster, streetRaces, garage, missions, ledger, audio, shops, mates,
     cops: [],
-    peds,
-    particles: [],
-    skids: [],
-    mission: createMissionState(),
-    race: createRaceState(),
-    audio: createAudio(),
+    heli: { active: false, x: 0, z: 0, heading: 0, night: false },
+    heat: { locked: false, quiet: 0, stars: 0 },
+    sessionEarned: 0,
+    empireHour: clock.hour,
     time: 0,
-    clock: 10 * 60,
-    nightFactor: 0,
-    toast: '',
-    toastTime: 0,
-    toastColor: '',
-    objectiveText: '',
-    missionTarget: null,
-    taxiCustomer: null,
-    hasSave: hasSave(),
-    missionDelay: 0,
-    bustTimer: 0,
-    muted: false,
-    // v2 systems: Air One, crew, respect, radio, garage, races.
-    heli: null,
-    crew: [],
-    respect: 0,
-    respectByDistrict: { marina: 0, downtown: 0, portside: 0, palm: 0, central: 0 },
-    radio: 0,
-    garageOpen: false,
-    upgrades: createUpgradeState(),
-    // v3 systems: the day/night cycle owns the clock from here on.
-    daynight: createDayNight(10 * 60),
-    // v3 systems: the weather runs on its own clock, starting clear.
-    weather: createWeather(),
-    // v3 systems: the career's own record, shown on the pause screen.
-    stats: createStats(),
-    // v5 systems: the business empire, the hired crew, the street series.
-    empire: newEmpire(),
-    roster: newCrew(),
-    streetRaces: newRaces(),
-    empireLastHour: 10,
-    weaponsOwned: ['fists', 'pistol'],
-    raceBest: null,
-    shake: 0,
-    cameraHigh: false,
-    snapCam: false,
-    shotCam: null,
+    paused: false,
+    over: false,
+    busted: false,
+    shopOpen: null,
+    shopNear: null,
+    shopSel: 0,
+    radio: false,
   };
-  // The story jobs read the new systems through the mission state, so the
-  // 'own' / 'hire' / 'win' steps can see them without a new argument.
-  game.mission.empire = game.empire;
-  game.mission.roster = game.roster;
-  game.mission.streetRaces = game.streetRaces;
-  return game;
 }
 
-// ---------------------------------------------------------------------------
-// Respect
-// ---------------------------------------------------------------------------
-
-/** Respect rank name for a respect total. */
-export function respectRankName(respect) {
-  let name = RESPECT_RANKS[0].name;
-  for (const rank of RESPECT_RANKS) if (respect >= rank.at) name = rank.name;
-  return name;
+function respectTier(points) {
+  let tier = RESPECT.tiers[0];
+  let next = null;
+  for (let i = 0; i < RESPECT.tiers.length; i += 1) {
+    if (points >= RESPECT.tiers[i].points) tier = RESPECT.tiers[i];
+    else { next = RESPECT.tiers[i]; break; }
+  }
+  return { tier, next };
 }
 
-/** Award respect (global + the district the player is standing in). */
-function awardRespect(game, amount, announceIt) {
-  const before = respectRankName(game.respect);
-  game.respect += amount;
-  const district = districtAt(game.player.x, game.player.y);
-  if (district) game.respectByDistrict[district.key] = (game.respectByDistrict[district.key] || 0) + amount;
-  const after = respectRankName(game.respect);
-  if (announceIt && after !== before) {
-    setToast(game, `RESPECT UP — you are now ${after.toUpperCase()}`, 4, '#ffd94a');
-    game.audio.missionDone();
+function saveWorld(world) {
+  const career = {
+    v: SAVE_VERSION,
+    cash: world.player.cash,
+    respect: world.player.respect,
+    empire: { owned: world.empire.owned, totalEarned: world.empire.totalEarned },
+    roster: { hired: world.roster.hired },
+    streetRaces: { won: world.streetRaces.won, best: world.streetRaces.best },
+    missionsDone: world.missions.done,
+    garage: world.garage,
+    timePlayed: Math.floor(world.ledger.timePlayed),
+  };
+  writeCareer(career);
+  world.career = career;
+  return career;
+}
+
+// --- Heat, cops, and the helicopter ---
+
+function raiseHeat(world, stars) {
+  world.player.wanted = Math.min(HEAT.maxStars, world.player.wanted + stars);
+  world.heat.quiet = 0;
+  if (world.player.wanted >= 3 && !world.heli.active) {
+    world.heli.active = true;
+    world.heli.x = world.player.x + 40;
+    world.heli.z = world.player.z + 40;
+    sirenSound(world.audio);
+  }
+  return world.player.wanted;
+}
+
+function tickHeat(world, dt) {
+  const decay = HEAT.decaySeconds / crewDecay(world.roster);
+  if (world.heat.locked) {
+    // Heat Lock (M10): the heat holds at 5 no matter what.
+    world.player.wanted = HEAT.maxStars;
+    return;
+  }
+  if (world.player.wanted === 0) return;
+  world.heat.quiet += dt;
+  if (world.heat.quiet >= decay) {
+    world.heat.quiet = 0;
+    world.player.wanted -= 1;
+    if (world.player.wanted < 3) world.heli.active = false;
   }
 }
 
-// ---------------------------------------------------------------------------
-// The wanted system: heat, police cars, foot cops, Air One
-// ---------------------------------------------------------------------------
-
-function raiseWanted(game, amount) {
-  const player = game.player;
-  if (player.wanted >= WANTED.max) return;
-  player.wanted = Math.min(WANTED.max, player.wanted + amount);
-  player.wantedTimer = 0;
-  game.audio.wantedUp();
-  setToast(game, `WANTED — ${'★'.repeat(player.wanted)}`, 2.5, '#ff5a4e');
-  announce(`Wanted level ${player.wanted}.`);
-}
-
-function policeTargetCount(wanted) {
-  return WANTED.chaseCars[Math.min(WANTED.max, wanted)];
-}
-
-function maintainPolice(game, dt) {
-  const player = game.player;
-  const wanted = player.wanted;
-  const wantCars = policeTargetCount(wanted);
-  // Spawn police cars on roads near the player, off-screen.
-  if (game.policeCars.length < wantCars) {
-    const road = nearestRoadPoint(player.x + (Math.random() < 0.5 ? -750 : 750), player.y + (Math.random() < 0.5 ? -550 : 550));
-    const car = createCar('police', road.x, road.y, 0, game.random);
-    car.speed = 300;
-    game.policeCars.push(car);
-  }
-  // Despawn far ones.
-  game.policeCars = game.policeCars.filter((car) => Math.hypot(car.x - player.x, car.y - player.y) < 1400);
-  // Foot cops when the player is on foot and wanted.
-  const wantCops = player.onFoot ? Math.min(3, wanted) : 0;
-  if (game.cops.length < wantCops) {
+function spawnCops(world) {
+  const want = HEAT.copBase + world.player.wanted * HEAT.copPerStar;
+  while (world.cops.length < want) {
     const angle = Math.random() * Math.PI * 2;
-    game.cops.push(spawnCop(player.x + Math.cos(angle) * 420, player.y + Math.sin(angle) * 420));
+    const dist = 46 + Math.random() * 24;
+    world.cops.push(spawnCop(
+      world.player.x + Math.cos(angle) * dist,
+      world.player.z + Math.sin(angle) * dist,
+      world.player.wanted,
+    ));
   }
-  game.cops = game.cops.filter((cop) => cop.health > 0 && Math.hypot(cop.x - player.x, cop.y - player.y) < 900);
-  void dt;
+  while (world.cops.length > want) world.cops.pop();
 }
 
-function updateWanted(game, dt) {
-  const player = game.player;
-  if (player.wanted <= 0) return;
-  // Heat Wave (M10) locks the heat: while the job runs, the wanted level
-  // cannot decay below the five stars it started with.
-  const mission = currentMission(game.mission);
-  if (game.mission.active && mission && mission.heatLock) {
-    if (player.wanted < mission.wanted) player.wanted = mission.wanted;
-    player.wantedTimer = 0;
-    return;
-  }
-  let near = false;
-  for (const car of game.policeCars) if (Math.hypot(car.x - player.x, car.y - player.y) < 550) near = true;
-  for (const cop of game.cops) if (Math.hypot(cop.x - player.x, cop.y - player.y) < 400) near = true;
-  // Air One watches from above: no cooling off while the heli is up.
-  if (game.heli) near = true;
-  if (near) {
-    player.wantedTimer = 0;
-    return;
-  }
-  player.wantedTimer += dt;
-  // After dark the heat sticks longer: the night holds a wanted level.
-  // Vera's crew perk shortens the wait: the heat fades faster with her.
-  const decaySeconds = (game.daynight && game.daynight.nightFactor > 0.6
-    ? WANTED.decaySeconds * (1 + DAYNIGHT.nightDecaySlow)
-    : WANTED.decaySeconds) / crewCooldownFactor(game.roster);
-  if (player.wantedTimer >= decaySeconds) {
-    player.wanted -= 1;
-    player.wantedTimer = 0;
-    setToast(game, 'Heat dying down…', 2);
+function tickCops(world, dt) {
+  spawnCops(world);
+  for (const cop of world.cops) {
+    advanceCop(cop, world.player, dt);
+    if (copBusts(cop, world.player)) {
+      bustPlayer(world);
+      return;
+    }
   }
 }
 
-/** The SCPD helicopter: appears at 4+ stars, leaves when the heat drops. */
-function maintainHelicopter(game, dt) {
-  const player = game.player;
-  if (player.wanted >= HELI.minStars && !game.heli) {
-    game.heli = createHelicopter(player.x, player.y);
-    setToast(game, 'AIR ONE — the SCPD helicopter is on you', 3, '#ff5a4e');
-    announce('Air One helicopter overhead. Lose them.');
-    game.audio.wantedUp();
-  }
-  if (game.heli && player.wanted < HELI.minStars - 1) game.heli = null;
-  if (game.heli) stepHelicopter(game.heli, player, dt);
+function bustPlayer(world) {
+  if (world.busted) return;
+  world.busted = true;
+  const fine = Math.floor(world.player.cash * ECONOMY.bustFine);
+  world.player.cash -= fine;
+  world.player.wanted = 0;
+  world.heli.active = false;
+  world.cops = [];
+  ledgerBust(world.ledger);
+  bustSound(world.audio);
+  // Wake up at the hospital, on foot, with the car impounded nearby.
+  world.player.x = SPOTS.hospital.x;
+  world.player.z = SPOTS.hospital.z;
+  world.player.inCar = false;
+  world.player.health = 100;
+  world.car.x = SPOTS.hospital.x + 8;
+  world.car.z = SPOTS.hospital.z;
+  showBanner(world.hud, 'BUSTED', `The cops took $${fine}. You wake up at the hospital.`, 5);
+  saveWorld(world);
+  setTimeout(() => { world.busted = false; }, 1200);
 }
 
-/** The crew: Dante and Rosa join once Leo has rank (Street King, 1500+). */
-function maintainCrew(game, dt) {
-  const player = game.player;
-  if (game.mission.index >= 5 && game.respect >= 1500 && game.crew.length === 0) {
-    game.crew.push(createCrewMember('Dante', player.x - 40, player.y + 30, '#20242c', '#f2b705'));
-    game.crew.push(createCrewMember('Rosa', player.x + 40, player.y - 30, '#c98d5f', '#3fa7a0'));
-    setToast(game, 'CREW — Dante and Rosa have your back', 4, '#7dff8a');
-    announce('Your crew joined. Dante and Rosa fight beside you.');
-  }
-  for (const member of game.crew) {
-    if (member.health > 0) stepCrew(member, player, game.cops, game.policeCars, dt, game.city, game.audio);
-  }
+function tickHeli(world, dt) {
+  const heli = world.heli;
+  if (!heli.active) return;
+  heli.night = world.clock.isNight;
+  const dx = world.player.x - heli.x;
+  const dz = world.player.z - heli.z;
+  const d = Math.sqrt(dx * dx + dz * dz) || 1;
+  heli.heading = Math.atan2(dx, dz);
+  const speed = 26;
+  heli.x += (dx / d) * speed * dt;
+  heli.z += (dz / d) * speed * dt;
+  // The heli's spotlight pins the player: heat decays slower under it.
+  if (d < 60) world.heat.quiet = Math.max(0, world.heat.quiet - dt * 0.5);
 }
 
-// ---------------------------------------------------------------------------
-// Cars: entering, exiting, particles
-// ---------------------------------------------------------------------------
+// --- Player and car ---
 
-function spawnParticles(game, x, y, color, count, speed) {
-  for (let i = 0; i < count; i += 1) {
-    const a = Math.random() * Math.PI * 2;
-    const v = (speed || 120) * (0.4 + Math.random() * 0.8);
-    game.particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.6 + Math.random() * 0.4, color, size: 2 + Math.random() * 3 });
-  }
-}
-
-function nearestCar(game, x, y, maxDist) {
+function nearestCar(world, x, z, maxD) {
   let best = null;
-  let bestD = maxDist;
-  for (const car of game.cars) {
-    if (car.police) continue;
-    const d = Math.hypot(car.x - x, car.y - y);
-    if (d < bestD) { best = car; bestD = d; }
+  let bestD = maxD || 6;
+  const cars = [world.car, ...world.traffic];
+  for (const c of cars) {
+    if (c.wrecked) continue;
+    const dx = c.x - x;
+    const dz = c.z - z;
+    const d = Math.sqrt(dx * dx + dz * dz);
+    if (d < bestD) { bestD = d; best = c; }
   }
   return best;
 }
 
-function enterCar(game, car) {
-  const player = game.player;
-  if (car.police) return;
-  if (Math.abs(car.speed) > 60) {
-    setToast(game, 'Too fast to jack!', 1.5);
-    return;
-  }
-  player.car = car;
-  player.onFoot = false;
-  car.parked = false;
-  car.traffic = false;
-  player.x = car.x;
-  player.y = car.y;
-  player.angle = car.angle;
-  game.audio.door();
-  // Stealing in sight of the law — or a witness — raises heat.
-  let seen = false;
-  for (const cop of game.cops) if (Math.hypot(cop.x - player.x, cop.y - player.y) < 350) seen = true;
-  for (const pc of game.policeCars) if (Math.hypot(pc.x - player.x, pc.y - player.y) < 350) seen = true;
-  if (!seen) for (const ped of game.peds) if (ped.health > 0 && Math.hypot(ped.x - player.x, ped.y - player.y) < 200) seen = true;
-  if (seen && !car.wasStolen) raiseWanted(game, 1);
-  car.wasStolen = true;
-  // A mission step that needed a car is done.
-  if (game.mission.active) {
-    const step = currentStep(game.mission);
-    if (step && step.type === 'steal') {
-      game.mission.step += 1;
-      setToast(game, 'Car stolen — get it to the garage', 2.5);
-    }
-  }
+function enterCar(world, car) {
+  world.player.inCar = true;
+  world.player.carId = car.id;
+  world.playerCar = car;
+  if (car.model === 'police') raiseHeat(world, 2);
+  return car;
 }
 
-function exitCar(game) {
-  const player = game.player;
-  const car = player.car;
-  if (!car) return;
-  car.speed = 0;
-  const side = car.angle + Math.PI / 2;
-  player.x = car.x + Math.cos(side) * 42;
-  player.y = car.y + Math.sin(side) * 42;
-  const fixed = resolveCircle(game.city, player.x, player.y, 13);
-  player.x = fixed.x;
-  player.y = fixed.y;
-  player.angle = car.angle;
-  player.car = null;
-  player.onFoot = true;
-  game.audio.door();
+function exitCar(world) {
+  if (!world.player.inCar || !world.playerCar) return;
+  const car = world.playerCar;
+  world.player.x = car.x + Math.sin(car.heading + Math.PI / 2) * 3;
+  world.player.z = car.z + Math.cos(car.heading + Math.PI / 2) * 3;
+  world.player.heading = car.heading;
+  world.player.inCar = false;
+  world.player.carId = null;
+  world.playerCar = null;
 }
 
-// ---------------------------------------------------------------------------
-// The objective line
-// ---------------------------------------------------------------------------
-
-function updateObjective(game) {
-  const player = game.player;
-  const mission = game.mission;
-  // Contextual interaction hints win over the mission line.
-  if (player.onFoot) {
-    const car = nearestCar(game, player.x, player.y, 55);
-    if (car) { game.objectiveText = 'Press E to steal the car'; game.missionTarget = null; return; }
-    if (nearPlace(game, 'gunshop', 90)) {
-      game.objectiveText = 'Press E — buy ammo $40 (El Gato Guns)';
-      return;
-    }
-    if (nearPlace(game, 'clinic', 90)) {
-      game.objectiveText = 'Press E — heal up $80 (Clinica Sol)';
-      return;
-    }
-    if (nearPlace(game, 'race', 110)) {
-      game.objectiveText = 'Press E — street race, 3 checkpoints, $500';
-      return;
-    }
-    if (nearestTaxiPed(game)) { game.objectiveText = 'A fare is waiting — get in a car'; return; }
-  } else {
-    if (player.wanted > 0 && nearPlace(game, 'spray', 110)) {
-      game.objectiveText = 'Press E — respray $150, lose the heat';
-      return;
-    }
-    if (nearPlace(game, 'garage', 110)) {
-      game.objectiveText = "Press E — Mara's Garage: engine, armor, paint";
-      return;
-    }
-    if (nearPlace(game, 'race', 110)) {
-      game.objectiveText = 'Press E — street race, 3 checkpoints, $500';
-      return;
-    }
-    const taxiPed = nearestTaxiPed(game);
-    if (taxiPed) {
-      game.objectiveText = 'TAXI! Press E to pick up the fare';
-      game.taxiCustomer = taxiPed;
-      return;
-    }
-  }
-  game.taxiCustomer = null;
-  if (mission.taxi) {
-    game.objectiveText = `Taxi fare — take them to ${mission.taxi.dest.label}`;
-    game.missionTarget = mission.taxi.dest;
-    return;
-  }
-  if (mission.active) {
-    const current = currentMission(mission);
-    const step = currentStep(mission);
-    if (current && step) {
-      game.objectiveText = `${current.title} — ${step.text}`;
-      // Race steps point at the live checkpoint, not a fixed place.
-      const raceKey = currentRaceCheckpoint(mission);
-      game.missionTarget = raceKey ? game.city.places[raceKey] : step.place ? game.city.places[step.place] : null;
-      return;
-    }
-  }
-  if (mission.done) {
-    game.objectiveText = `Solmar Legend — free roam · ${packagesLeft(mission)} packages left`;
-    game.missionTarget = null;
-    return;
-  }
-  const next = currentMission(mission);
-  // A shop in range speaks first while free-roaming: the E key's promise
-  // beats the "next job" line, so the player learns the shops by walking.
-  const prompt = shopPrompt(game, player.onFoot, shopCtx);
-  if (prompt) {
-    game.objectiveText = prompt;
-    game.missionTarget = null;
-    return;
-  }
-  game.objectiveText = next ? `Next job: ${next.title} — press ENTER to start` : 'Free roam — find work, Leo';
-  game.missionTarget = null;
-}
-
-// ---------------------------------------------------------------------------
-// The E key: shops, race flag, taxi, garage, spray, entering / exiting
-// ---------------------------------------------------------------------------
-
-/** The helpers the shop registry borrows from the loop. */
-const shopCtx = {
-  toast: setToast,
-  announce,
-  particles: spawnParticles,
-  nearPlace,
-  nearestTaxiPed,
-};
-
-function handleEnter(game) {
-  const player = game.player;
-  if (!player.onFoot) {
-    exitCar(game);
-    return;
-  }
-  // The shop registry takes the E key first: race flag, gun shop, clinic.
-  if (enterShop(game, true, shopCtx)) return;
-  const car = nearestCar(game, player.x, player.y, 55);
-  if (car) enterCar(game, car);
-}
-
-function handleEnterInCar(game) {
-  // The shop registry takes the E key first: garage, race, spray, taxi.
-  if (enterShop(game, false, shopCtx)) return;
-  exitCar(game);
-}
-
-function respawn(game, kind) {
-  const player = game.player;
-  player.health = 100;
-  if (kind === 'busted') trackBust(game.stats);
-  player.cash = Math.max(0, player.cash - bustedPenalty(game.upgrades));
-  player.wanted = 0;
-  player.wantedTimer = 0;
-  player.bustTimer = 0;
-  game.policeCars = [];
-  game.cops = [];
-  game.heli = null;
-  game.garageOpen = false;
-  if (player.car) {
-    player.car.speed = 0;
-    player.car = null;
-  }
-  player.onFoot = true;
-  const spot = kind === 'wasted' ? game.city.places.clinic : game.city.places.hideout;
-  player.x = spot.x;
-  player.y = spot.y;
-  player.angle = -Math.PI / 2;
-  failMission(game.mission);
-  game.audio.busted();
-}
-
-// ---------------------------------------------------------------------------
-// One fixed step of the game. Returns 'busted' | 'wasted' | 'win' or null.
-// ---------------------------------------------------------------------------
-
-function stepGame(game, input, dt) {
-  const player = game.player;
-  const city = game.city;
-  game.time += dt;
-  trackTime(game.stats, dt);
-  // The day/night cycle owns the clock now: it advances the time, works
-  // out the darkness, and says when the watch changes.
-  const phaseChange = stepDayNight(game, dt);
-  game.nightFactor = game.daynight.nightFactor;
-  if (phaseChange) {
-    setToast(game, PHASE_TOASTS[phaseChange], 3.5, '#ffd94a');
-    game.audio.phase();
-  }
-  // The weather turns on its own clock; a change is worth a line, and a
-  // lightning strike is worth a rumble.
-  const weatherEvent = stepWeather(game.weather, dt);
-  if (weatherEvent) {
-    if (weatherEvent.kind) setToast(game, `Weather — ${weatherTip(game.weather.kind)}`, 3.5, '#9fc3e8');
-    if (weatherEvent.lightning) game.audio.thunder();
-  }
-  if (game.toastTime > 0) game.toastTime -= dt;
-
-  // The empire pays by the game hour: every hour that turns, each owned
-  // storefront drops its take into Leo's pocket.
-  const hourNow = Math.floor(game.clock / 60) % 24;
-  if (hourNow !== game.empireLastHour) {
-    const owed = (hourNow - game.empireLastHour + 24) % 24;
-    const payout = tickVentureIncome(game.empire, owed, hourNow);
-    if (payout.amount > 0) {
-      player.cash += payout.amount;
-      trackEarn(game.stats, payout.amount);
-      trackBusinessIncome(game.stats, payout.amount);
-      setToast(game, `EMPIRE — businesses paid $${payout.amount}`, 3, '#7dff8a');
-    }
-    game.empireLastHour = hourNow;
-  }
-
-  // Delayed start of the next story mission.
-  if (game.missionDelay > 0) {
-    game.missionDelay -= dt;
-    if (game.missionDelay <= 0 && !game.mission.done) {
-      const next = currentMission(game.mission);
-      if (next) {
-        startMission(game.mission, game.audio);
-        if (next.wanted) player.wanted = Math.max(player.wanted, next.wanted);
-        setToast(game, `MISSION: ${next.title}`, 4, '#ffd94a');
-        announce(`${next.title}. ${next.brief}`);
-      }
-    }
-  }
-
-  const actions = input.takeActions();
-  const axes = input.axes();
-  player.run = input.running();
-  // X abandons a running street series race (the entry fee stays with the flag).
-  if ((actions & ACTION_ABANDON) && game.streetRaces && game.streetRaces.running) {
-    abandonRace(game.streetRaces);
-    setToast(game, 'Race abandoned — the fee stays with the flag', 2.5);
-  }
-  // Radio (R): cycle the three stations. Camera (C): chase / high.
-  if (actions & ACTION_RADIO) {
-    game.radio = (game.radio + 1) % 3;
-    game.audio.setStation(game.radio);
-    setToast(game, `RADIO — ${['SOL FM', 'PALM 87', 'HEAT 102'][game.radio]}`, 2);
-  }
-  if (actions & ACTION_CAMERA) {
-    game.cameraHigh = !game.cameraHigh;
-    setToast(game, game.cameraHigh ? 'Camera: high' : 'Camera: chase', 1.2);
-  }
-  // Weapon slots 1-4: select an owned gun, or buy it at El Gato Guns.
-  const slot = input.takeSlot();
-  if (slot >= 0 && slot < WEAPON_ORDER.length) {
-    const name = WEAPON_ORDER[slot];
-    const nearShop = nearPlace(game, 'gunshop', 90);
-    if (!game.weaponsOwned.includes(name) && nearShop && player.cash >= WEAPONS[name].cost) {
-      player.cash -= WEAPONS[name].cost;
-      game.weaponsOwned.push(name);
-      player.ammo[name] = WEAPONS[name].ammo;
-      player.weapon = name;
-      game.audio.coin();
-      setToast(game, `${WEAPONS[name].name} bought — ${WEAPONS[name].ammo} rounds`, 2.5);
-    } else if (game.weaponsOwned.includes(name)) {
-      player.weapon = name;
-      setToast(game, WEAPONS[name].name, 1);
-    } else if (!game.weaponsOwned.includes(name)) {
-      setToast(game, `${WEAPONS[name].name} — $${WEAPONS[name].cost} at El Gato Guns`, 2);
-    }
-  }
-  if (input.isMuted() !== game.muted) {
-    game.muted = input.isMuted();
-    game.audio.setEnabled(!game.muted);
-  }
-
-  // Aiming on foot with a gun.
-  let aimAngle = player.angle;
-  if (!player.onFoot || player.weapon !== 'fists') {
-    const mouse = input.mouse();
-    const renderer = game.renderer;
-    if (renderer) {
-      const world = renderer.screenToWorld(mouse.x, mouse.y, game);
-      aimAngle = Math.atan2(world.y - player.y, world.x - player.x);
-    }
-  }
-
-  if (player.onFoot) {
-    stepPlayerOnFoot(player, axes, dt, city, aimAngle, input.firing(), game.peds, game.cops);
-    if (actions & ACTION_ENTER) handleEnter(game);
-    if (actions & ACTION_PUNCH) {
-      const hits = punch(player, game.peds, game.cops, game.audio, crewDamageFactor(game.roster));
-      if (hits > 0) {
-        spawnParticles(game, player.x + Math.cos(player.angle) * 30, player.y + Math.sin(player.angle) * 30, '#ffd94a', 6, 80);
-        const copNear = game.cops.some((c) => Math.hypot(c.x - player.x, c.y - player.y) < 300);
-        if (copNear) raiseWanted(game, 1);
-      }
-    }
-    if (actions & ACTION_WEAPON) {
-      const owned = WEAPON_ORDER.filter((w) => game.weaponsOwned.includes(w));
-      const idx = owned.indexOf(player.weapon);
-      player.weapon = owned[(idx + 1) % owned.length];
-      setToast(game, WEAPONS[player.weapon].name, 1.2);
-    }
-    if (input.firing() && player.weapon !== 'fists') {
-      const hit = shoot(player, aimAngle, game.peds, game.cops, game.cars, game.audio, crewDamageFactor(game.roster));
-      if (hit) {
-        trackHit(game.stats);
-        spawnParticles(game, player.x + Math.cos(aimAngle) * 60, player.y + Math.sin(aimAngle) * 60, '#ff5a4e', 8, 100);
-        if (hit.kind === 'ped') raiseWanted(game, 1);
-        if (hit.kind === 'cop') raiseWanted(game, 2);
-      }
-    }
-  } else if (player.car) {
-    const car = player.car;
-    const result = stepDrivenCar(car, { x: axes.x, y: axes.y, handbrake: input.handbrake() }, dt, city, game.cars, game.upgrades, crewHandlingFactor(game.roster));
-    trackDrive(game.stats, car, dt);
-    player.x = car.x;
-    player.y = car.y;
-    player.angle = car.angle;
-    if (result === 'crash') {
-      game.audio.crash();
-      game.shake = 0.7;
-      spawnParticles(game, car.x, car.y, '#9a9a9a', 12, 140);
-    }
-    // Skid marks when handbraking at speed.
-    if (input.handbrake() && Math.abs(car.speed) > 150) {
-      game.skids.push({ x: car.x, y: car.y, angle: car.angle, life: 1 });
-      if (game.skids.length > 80) game.skids.shift();
-    }
-    // Nitro flame: a burning car leaves a trail of sparks.
-    if (car.nitro > 0 && Math.random() < 0.6) {
-      spawnParticles(game, car.x - Math.cos(car.angle) * 30, car.y - Math.sin(car.angle) * 30, '#ff7a3d', 2, 120);
-    }
-    // Running over pedestrians is a crime, and it is visible.
-    for (const ped of game.peds) {
-      if (ped.health <= 0 || ped.hitCooldown > 0) continue;
-      const d = Math.hypot(ped.x - car.x, ped.y - car.y);
-      if (d < 26 && Math.abs(car.speed) > 80) {
-        ped.health -= 60;
-        ped.flee = 3;
-        ped.hitCooldown = 2;
-        spawnParticles(game, ped.x, ped.y, '#ff5a4e', 10, 120);
-        game.audio.crash();
-        raiseWanted(game, 1);
-      }
-    }
-    if (actions & ACTION_ENTER) handleEnterInCar(game);
-    // Nitro (N): spend a charge for a burst, if the garage stocked one.
-    if (actions & ACTION_NITRO) {
-      if (useNitro(game)) {
-        game.audio.nitro();
-        setToast(game, 'NITRO!', 1.5, '#ff7a3d');
-        spawnParticles(game, car.x - Math.cos(car.angle) * 30, car.y - Math.sin(car.angle) * 30, '#ff7a3d', 10, 160);
-      } else if ((game.upgrades.nitro || 0) <= 0) {
-        setToast(game, 'No nitro — stock up at Mara\'s Garage', 2);
-      }
-    }
-  }
-
-  for (const skid of game.skids) skid.life -= dt * 0.25;
-  game.skids = game.skids.filter((s) => s.life > 0);
-  for (const ped of game.peds) {
-    if (ped.hitCooldown > 0) ped.hitCooldown -= dt;
-  }
-
-  // Traffic and pedestrians keep the city alive.
-  for (const car of game.cars) {
-    if (car.traffic) stepTrafficCar(car, dt, city, game.cars, game.random);
-  }
-  stepPeds(game, dt);
-
-  // Police.
-  if (player.wanted > 0) maintainPolice(game, dt);
-  for (const car of game.policeCars) {
-    stepPoliceCar(car, player, dt, city, game.cars);
-    // A police ram hurts.
-    if (!player.onFoot && player.car) {
-      const d = Math.hypot(car.x - player.x, car.y - player.y);
-      if (d < 56 && Math.abs(car.speed) > 200) {
-        player.car.speed *= 0.6;
-        game.audio.crash();
-        spawnParticles(game, player.x, player.y, '#9a9a9a', 8, 120);
-      }
-    }
-  }
-  // Foot cops chase and punch; at 3+ stars they shoot.
-  for (const cop of game.cops) {
-    const result = stepCop(cop, player, dt, city, game.audio);
-    if (result === 'wasted') return 'wasted';
-    if (player.wanted >= POLICE.shootAtStars && player.onFoot) {
-      cop.shootCooldown -= dt;
-      const d = Math.hypot(cop.x - player.x, cop.y - player.y);
-      if (d < 320 && d > 60 && cop.shootCooldown <= 0) {
-        cop.shootCooldown = 1.7;
-        player.health -= 6;
-        player.hurtFlash = 0.25;
-        spawnParticles(game, cop.x, cop.y, '#ffd94a', 5, 90);
-        game.audio.shoot();
-        if (player.health <= 0) return 'wasted';
-      }
-    }
-  }
-  updateWanted(game, dt);
-  maintainHelicopter(game, dt);
-  maintainCrew(game, dt);
-
-  // Busted: boxed in by the law while slow.
-  let bust = false;
-  if (!player.onFoot && player.car && Math.abs(player.car.speed) < 25) {
-    for (const car of game.policeCars) {
-      if (Math.hypot(car.x - player.x, car.y - player.y) < 70) bust = true;
-    }
-  }
-  if (player.onFoot) {
-    for (const cop of game.cops) {
-      if (Math.hypot(cop.x - player.x, cop.y - player.y) < 26) bust = true;
-    }
-  }
-  if (bust) {
-    game.bustTimer += dt;
-    if (game.bustTimer > 1.6) return 'busted';
-  } else game.bustTimer = 0;
-
-  // Missions, taxi, packages, races.
-  const missionEvent = stepMission(game.mission, player, city, dt, game.audio);
-  if (missionEvent && missionEvent.startsWith('drop:')) {
-    const stars = Number(missionEvent.split(':')[1]);
-    awardRespect(game, 15, false);
-    setToast(game, `Package dropped — +$150, heat ${'★'.repeat(stars)}`, 3, '#ff5a4e');
-    announce(`Package dropped. Wanted level ${stars}.`);
-    spawnParticles(game, player.x, player.y, '#ffd94a', 10, 110);
-  } else if (missionEvent && missionEvent.startsWith('mission-done:')) {
-    const reward = Number(missionEvent.split(':')[1]);
-    trackEarn(game.stats, reward);
-    trackMission(game.stats);
-    setToast(game, `MISSION COMPLETE — +$${reward}`, 4, '#7dff8a');
-    announce(`Mission complete. Earned $${reward}.`);
-    awardRespect(game, RESPECT_MISSION, true);
-    saveGame(game);
-    spawnParticles(game, player.x, player.y, '#7dff8a', 18, 130);
-    if (game.mission.done) return 'win';
-    game.missionDelay = 4;
-  } else if (missionEvent === 'mission-failed') {
-    setToast(game, 'MISSION FAILED — press ENTER to retry', 5, '#ff5a4e');
-    announce('Mission failed. Press Enter to retry.');
-  }
-  if (game.mission.taxi) {
-    const taxiEvent = stepTaxi(game.mission, player, dt, game.audio);
-    if (taxiEvent === 'taxi-late') setToast(game, 'The fare walked away…', 2.5);
-    else {
-      const dest = game.mission.taxi.dest;
-      if (Math.hypot(player.x - dest.x, player.y - dest.y) < 90) {
-        const fare = finishTaxi(game.mission, player, game.audio, nightPayMultiplier(game.daynight.nightFactor));
-        trackEarn(game.stats, fare);
-        awardRespect(game, RESPECT_TAXI, false);
-        setToast(game, `Fare complete — +$${fare}`, 3, '#7dff8a');
-      }
-    }
-  }
-  if (game.race.active) {
-    const raceEvent = stepRace(game.race, player, city, dt, game.audio);
-    if (raceEvent === 'race-checkpoint') {
-      setToast(game, `Checkpoint ${game.race.checkpoint}/${RACES.checkpoints.length} — keep going!`, 2, '#ffd94a');
-    } else if (raceEvent && raceEvent.startsWith('race-done:')) {
-      const secs = Number(raceEvent.split(':')[1]);
-      const reward = finishRace(game.race, player, game.audio, raceRewardMultiplier(game.upgrades));
-      trackEarn(game.stats, reward);
-      trackRace(game.stats, true);
-      trackRaceBest(game.stats, secs);
-      awardRespect(game, RESPECT_RACE, true);
-      setToast(game, `RACE WON — +$${reward} in ${secs.toFixed(1)}s`, 4, '#7dff8a');
-      saveGame(game);
-    } else if (raceEvent === 'race-failed') {
-      trackRace(game.stats, false);
-      setToast(game, 'Race over — too slow. The flag is still there.', 3, '#ff5a4e');
-    }
-  }
-  // The v5 street series: gates in order against the clock, prize at the flag.
-  const streetRun = game.streetRaces ? raceRunning(game.streetRaces) : null;
-  if (streetRun) {
-    const card = raceById(streetRun.raceId);
-    const gateKey = STREET_GATE_KEYS[streetRun.gate];
-    const gatePlace = gateKey ? city.places[gateKey] : null;
-    if (gatePlace && Math.hypot(player.x - gatePlace.x, player.y - gatePlace.y) < STREET_SERIES.gateRadius) {
-      const passed = raceGatePassed(game.streetRaces);
-      if (passed.done) {
-        const elapsedMs = Math.max(0, Math.round((game.time - streetRun.startedAt) * 1000));
-        const outcome = finishStreetRace(game.streetRaces, elapsedMs);
-        // A wet race pays a quarter more — the rain bonus from the weather.
-        const prize = Math.round(outcome.prize * raceRainBonus(game.weather));
-        player.cash += prize;
-        trackEarn(game.stats, prize);
-        trackSeriesWin(game.stats);
-        trackRace(game.stats, true);
-        trackRaceBest(game.stats, elapsedMs / 1000);
-        awardRespect(game, RESPECT_RACE, true);
-        setToast(game, `STREET SERIES — ${card.name} won, +$${prize}${outcome.isRecord ? ' (new best!)' : ''}`, 4, '#7dff8a');
-        saveGame(game);
-      } else {
-        setToast(game, `Gate ${passed.gate}/${passed.total} — keep going!`, 2, '#ffd94a');
-      }
-    }
-  }
-  if (checkPackages(game.mission, player, city, game.audio) > 0) {
-    awardRespect(game, RESPECT_PACKAGE, false);
-    setToast(game, `Hidden package found! +$100 (${packagesLeft(game.mission)} left)`, 3, '#ffd94a');
-  }
-
-  // Particles fade.
-  for (const p of game.particles) {
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
-    p.life -= dt;
-  }
-  game.particles = game.particles.filter((p) => p.life > 0);
-
-  // Audio follows the action.
-  game.audio.step(game.time, !player.onFoot && !!player.car, player.car ? Math.abs(player.car.speed) / 560 : 0);
-  game.audio.setSiren(game.policeCars.length > 0);
-
-  updateObjective(game);
-  return null;
-}
-
-// ---------------------------------------------------------------------------
-// Screenshot mode and the main loop
-// ---------------------------------------------------------------------------
-
-function runShot(name) {
-  const game = createGame(seed);
-  const renderer = createRenderer(canvas, hudCanvas);
-  game.renderer = renderer;
-  window.__game = game;
-  const scene = stageShot(name, game);
-  // The shot sets its own clock (golden hour, night); bring the cycle's
-  // derived values back in line with it before the first painted frame.
-  syncDayNight(game.daynight, game.clock);
-  game.nightFactor = game.daynight.nightFactor;
-  // Snap the chase camera onto the player at once: the lerped camera would
-  // still be catching up after the two painted frames, leaving the player
-  // car at (or off) the frame edge.
-  game.snapCam = true;
-  let painted = 0;
-  function paint() {
-    renderer.draw(game, scene.screen);
-    painted += 1;
-    if (painted < 2) requestAnimationFrame(paint);
-    else window.__shotReady = true;
-  }
-  requestAnimationFrame(paint);
-}
-
-function runGame() {
-  const game = createGame(seed);
-  const renderer = createRenderer(canvas, hudCanvas);
-  game.renderer = renderer;
-  const input = createInput(canvas);
-  window.__game = game;
-  let screen = SCREEN_TITLE;
-  let accumulator = 0;
-  let last = performance.now();
-
-  function startNewGame() {
-    clearSave();
-    const fresh = createGame(seed);
-    Object.assign(game, fresh);
-    game.renderer = renderer;
-    game.hasSave = false;
-    startMission(game.mission, game.audio);
-    setToast(game, 'MISSION: Wheels Up', 4, '#ffd94a');
-    announce('Solmar Heat. Mission: Wheels Up. Steal a car and bring it to Mara\'s garage.');
-    screen = SCREEN_PLAY;
-  }
-
-  function continueGame() {
-    const save = loadSave();
-    if (!save) { startNewGame(); return; }
-    game.player.cash = save.cash;
-    game.player.health = save.health;
-    game.player.x = save.x;
-    game.player.y = save.y;
-    game.mission.index = save.missions;
-    game.mission.completed = save.completed || [];
-    game.mission.packagesFound = save.packages || 0;
-    game.respect = save.respect || 0;
-    game.upgrades = sanitizeUpgrades(save.upgrades);
-    game.stats = sanitizeStats(save.stats);
-    game.weaponsOwned = save.weaponsOwned || ['fists', 'pistol'];
-    if (typeof save.clock === 'number') {
-      game.clock = save.clock;
-      syncDayNight(game.daynight, game.clock);
-      game.nightFactor = game.daynight.nightFactor;
-    }
-    if (save.ammo) game.player.ammo = save.ammo;
-    if (save.radio !== undefined) { game.radio = save.radio; game.audio.setStation(save.radio); }
-    game.raceBest = save.raceBest || null;
-    // v5 systems: the empire, the roster and the series come back too, and
-    // the story jobs are re-pointed at the restored copies.
-    game.empire = restoreEmpire(save.empire);
-    game.roster = restoreCrew(save.roster);
-    game.streetRaces = restoreRaces(save.streetRaces);
-    game.mission.empire = game.empire;
-    game.mission.roster = game.roster;
-    game.mission.streetRaces = game.streetRaces;
-    game.empireLastHour = Math.floor(game.clock / 60) % 24;
-    for (let i = 0; i < game.mission.packagesFound; i += 1) {
-      game.city.hiddenPackages[i].found = true;
-    }
-    startMission(game.mission, game.audio);
-    screen = SCREEN_PLAY;
-  }
-
-  function frame(now) {
-    requestAnimationFrame(frame);
-    accumulator += Math.min((now - last) / 1000, MAX_FRAME);
-    last = now;
-    const actions = input.takeActions();
-    if (screen === SCREEN_TITLE) {
-      // The city idles behind the title: traffic cruises, peds wander.
-      while (accumulator >= STEP) {
-        for (const car of game.cars) if (car.traffic) stepTrafficCar(car, STEP, game.city, game.cars, game.random);
-        stepPeds(game, STEP);
-        game.time += STEP;
-        accumulator -= STEP;
-      }
-      renderer.draw(game, SCREEN_TITLE);
-      if (actions & ACTION_CONFIRM) {
-        game.audio.unlock();
-        if (game.hasSave) continueGame();
-        else startNewGame();
-      }
-      return;
-    }
-    if (screen === SCREEN_PAUSED) {
-      renderer.draw(game, SCREEN_PAUSED);
-      if (actions & (ACTION_PAUSE | ACTION_CONFIRM)) {
-        screen = SCREEN_PLAY;
-        announce('Playing.');
-      }
-      return;
-    }
-    if (screen === SCREEN_BUSTED || screen === SCREEN_WASTED || screen === SCREEN_WIN) {
-      renderer.draw(game, screen);
-      if (actions & ACTION_CONFIRM) {
-        if (screen === SCREEN_WIN) {
-          screen = SCREEN_PLAY;
-          announce('Free roam. The city is yours.');
-        } else {
-          const kind = screen === SCREEN_WASTED ? 'wasted' : 'busted';
-          respawn(game, kind);
-          screen = SCREEN_PLAY;
-          announce('Back on the streets.');
-        }
-      }
-      return;
-    }
-    // Playing.
-    if (actions & ACTION_PAUSE) {
-      screen = SCREEN_PAUSED;
-      saveGame(game);
-      announce('Paused.');
-      renderer.draw(game, SCREEN_PAUSED);
-      return;
-    }
-    // Garage menu: the world waits while Leo shops for parts.
-    if (game.garageOpen) {
-      if (actions & (ACTION_ENTER | ACTION_PAUSE)) {
-        game.garageOpen = false;
-        announce('Back on the street.');
-      } else {
-        const gSlot = input.takeSlot();
-        const kinds = ['engine', 'armor', 'paint', 'nitro', 'sell'];
-        if (gSlot >= 0 && gSlot < kinds.length) {
-          // Slot 5 is the chop shop: sell the car you drove in on.
-          const result = kinds[gSlot] === 'sell' ? sellCar(game) : buyUpgrade(game, kinds[gSlot]);
-          setToast(game, result.message, result.ok ? 2.5 : 2, result.ok ? '#7dff8a' : '');
-          if (result.ok) {
-            if (result.sound === 'coin') game.audio.coin();
-            saveGame(game);
-          }
-        }
-      }
-      renderer.draw(game, SCREEN_PLAY);
-      accumulator = 0;
-      return;
-    }
-    if (actions & ACTION_CONFIRM && !game.mission.active && !game.mission.done) {
-      const next = currentMission(game.mission);
-      if (next) {
-        startMission(game.mission, game.audio);
-        if (next.wanted) game.player.wanted = Math.max(game.player.wanted, next.wanted);
-        setToast(game, `MISSION: ${next.title}`, 4, '#ffd94a');
-        announce(`${next.title}. ${next.brief}`);
-      }
-    }
-    let end = null;
-    // One-shot presses are spent by the first step of this frame, never twice.
-    let pendingActions = actions;
-    const stepInput = {
-      takeActions: () => {
-        const taken = pendingActions;
-        pendingActions = 0;
-        return taken;
-      },
-      takeSlot: () => input.takeSlot(),
-      axes: () => input.axes(),
-      running: () => input.running(),
-      handbrake: () => input.handbrake(),
-      firing: () => input.firing(),
-      mouse: () => input.mouse(),
-      isMuted: () => input.isMuted(),
+function tickPlayer(world, keys, dt) {
+  const p = world.player;
+  if (p.inCar && world.playerCar) {
+    const car = world.playerCar;
+    const drive = {
+      throttle: keys.up ? 1 : 0,
+      brake: keys.down ? 1 : 0,
+      steer: (keys.left ? -1 : 0) + (keys.right ? 1 : 0),
+      nitro: false,
     };
-    while (accumulator >= STEP && !end) {
-      end = stepGame(game, stepInput, STEP);
-      accumulator -= STEP;
+    // Nitro: one charge lights one burn (4s). Holding Space during a burn
+    // spends nothing more; a fresh press after the burn lights the next.
+    if (car.nitroBurn > 0) {
+      car.nitroBurn -= dt;
+      drive.nitro = true;
+    } else if (keys.nitro && world.garage.nitro > 0) {
+      if (useNitro(world.garage)) {
+        car.nitroBurn = 4;
+        drive.nitro = true;
+      }
     }
-    if (end === 'busted' || end === 'wasted' || end === 'win') {
-      screen = end === 'busted' ? SCREEN_BUSTED : end === 'wasted' ? SCREEN_WASTED : SCREEN_WIN;
-      announce(screen === SCREEN_WIN ? 'Solmar Legend. Every job done.' : end === 'busted' ? 'Busted by the SCPD.' : 'Wasted.');
+    const handling = crewHandling(world.roster);
+    advanceCar(car, drive, dt, handling);
+    p.x = car.x;
+    p.z = car.z;
+    p.heading = car.heading;
+    ledgerDrive(world.ledger, car.speed * dt, dt);
+    ledgerTopSpeed(world.ledger, kmh(car));
+    // Collisions with traffic.
+    for (const other of world.traffic) {
+      if (other === car || other.wrecked) continue;
+      if (carsCollide(car, other, 5)) {
+        pushApart(car, other);
+        damageCar(car, 4);
+        damageCar(other, 6);
+        if (car.speed > 12) raiseHeat(world, 0);
+      }
     }
-    renderer.draw(game, screen);
-    accumulator = 0;
+    // Off the road and into a building: stop, do not pass through.
+    for (const b of world.city.buildings) {
+      const dx = car.x - b.x;
+      const dz = car.z - b.z;
+      if (Math.abs(dx) < b.w / 2 + 1.5 && Math.abs(dz) < b.d / 2 + 1.5) {
+        car.speed *= 0.3;
+        car.x = b.x + Math.sign(dx) * (b.w / 2 + 1.6);
+        car.z = b.z + Math.sign(dz) * (b.d / 2 + 1.6);
+      }
+    }
+  } else {
+    const move = {
+      x: (keys.right ? 1 : 0) - (keys.left ? 1 : 0),
+      z: (keys.down ? 1 : 0) - (keys.up ? 1 : 0),
+      run: keys.run,
+    };
+    movePlayer(p, move, dt);
+    ledgerDrive(world.ledger, p.speed * dt, dt);
   }
-
-  announce('Solmar Heat. Press Space to start.');
-  requestAnimationFrame(frame);
+  // Punch and shoot.
+  if (keys.punch) {
+    for (const cop of world.cops) {
+      playerPunch(p, cop, crewDamage(world.roster));
+      if (cop.health <= 0) {
+        world.cops.splice(world.cops.indexOf(cop), 1);
+        raiseHeat(world, 1);
+      }
+    }
+    punchSound(world.audio);
+  }
+  if (keys.shoot && p.weapon > 0) {
+    for (const cop of world.cops) {
+      playerShoot(p, cop, p.weapon, crewDamage(world.roster));
+      if (cop.health <= 0) {
+        world.cops.splice(world.cops.indexOf(cop), 1);
+        raiseHeat(world, 1);
+      }
+    }
+    shotSound(world.audio);
+  }
 }
 
-if (shot) runShot(shot);
-else runGame();
+function tickTraffic(world, dt) {
+  for (const car of world.traffic) {
+    advanceTrafficCar(car, world.city, dt, world.dice);
+  }
+  // Keep the streets full: replace wrecked traffic cars.
+  for (let i = 0; i < world.traffic.length; i += 1) {
+    if (world.traffic[i].wrecked) {
+      const fresh = spawnTraffic(world.dice, world.city, 1)[0];
+      world.traffic[i] = fresh;
+    }
+  }
+}
+
+function tickMates(world, dt) {
+  for (const mate of world.mates) {
+    advanceMate(mate, world.player, dt);
+    for (const cop of world.cops) {
+      matePunch(mate, cop, 12 * crewDamage(world.roster));
+      if (cop.health <= 0) world.cops.splice(world.cops.indexOf(cop), 1);
+    }
+  }
+}
+
+// --- Shops, missions, and the economy ---
+
+function tickShop(world, keys) {
+  const shop = shopNear(world.shops, world.player.x, world.player.z);
+  world.shopNear = shop;
+  if (!shop) {
+    if (world.shopOpen) { world.shopOpen = null; showPrompt(world.hud, null); }
+    return;
+  }
+  if (keys.interact && !world.shopOpen) {
+    world.shopOpen = shop;
+    world.shopSel = 0;
+    startAudio(world.audio);
+  }
+  if (!world.shopOpen) return;
+  const menu = shopPrompt(shop, {
+    empire: world.empire,
+    roster: world.roster,
+    streetRaces: world.streetRaces,
+    player: world.player,
+    garage: world.garage,
+  });
+  showPrompt(world.hud, menu);
+  if (keys.escape) {
+    world.shopOpen = null;
+    showPrompt(world.hud, null);
+    return;
+  }
+  if (keys.choice >= 0 && keys.choice < menu.length) {
+    const picked = menu[keys.choice];
+    buyFromShop(world, shop, picked);
+    world.shopOpen = null;
+    showPrompt(world.hud, null);
+  }
+}
+
+function buyFromShop(world, shop, picked) {
+  if (!picked || picked.key === 'leave') return;
+  const p = world.player;
+  if (shop.kind === 'venture') {
+    if (picked.key === 'buy') {
+      const res = buyVenture(world.empire, shop.venture, p.cash);
+      if (res.ok) {
+        p.cash -= res.cost;
+        ledgerSpend(world.ledger, res.cost);
+        ledgerVenture(world.ledger);
+        p.respect += 150;
+        dealSound(world.audio);
+        showToast(world.hud, `${res.venture.label} is yours — $${res.venture.hourly}/hr`);
+        saveWorld(world);
+      } else showToast(world.hud, res.reason);
+    }
+    if (picked.key === 'upgrade') {
+      const res = upgradeVenture(world.empire, shop.venture, p.cash);
+      if (res.ok) {
+        p.cash -= res.cost;
+        ledgerSpend(world.ledger, res.cost);
+        dealSound(world.audio);
+        showToast(world.hud, `Upgraded to level ${res.level}`);
+        saveWorld(world);
+      } else showToast(world.hud, res.reason);
+    }
+    return;
+  }
+  if (shop.kind === 'crew' && picked.key.startsWith('hire-')) {
+    const mateId = picked.key.slice(5);
+    const res = hireMate(world.roster, mateId, p.cash, world.clock.hour);
+    if (res.ok) {
+      p.cash -= res.cost;
+      ledgerSpend(world.ledger, res.cost);
+      ledgerMate(world.ledger);
+      world.mates.push(spawnMate(mateId, p.x + 4, p.z + 4));
+      dealSound(world.audio);
+      showToast(world.hud, `${res.mate.label} joined the crew`);
+      saveWorld(world);
+    } else showToast(world.hud, res.reason);
+    return;
+  }
+  if (shop.kind === 'races' && picked.key.startsWith('race-')) {
+    const raceId = picked.key.slice(5);
+    const res = startRace(world.streetRaces, raceId, p.cash, world.city);
+    if (res.ok) {
+      p.cash -= res.cost;
+      ledgerSpend(world.ledger, res.cost);
+      const def = raceDef(raceId);
+      const gates = gateChain(world.city, raceId);
+      makeGateMeshes(world.view, gates);
+      showBanner(world.hud, `${def.label} — GO!`, `Pass ${def.gates} gates. Par ${def.par}s.`, 3);
+      saveWorld(world);
+    } else showToast(world.hud, res.reason);
+    return;
+  }
+  if (shop.kind === 'guns') {
+    if (picked.key.startsWith('gun-')) {
+      const idx = Number(picked.key.slice(4));
+      const w = WEAPONS.slots[idx];
+      if (w && p.cash >= w.price) {
+        p.cash -= w.price;
+        p.weapon = idx;
+        p.ammo[idx] = w.ammo;
+        ledgerSpend(world.ledger, w.price);
+        dealSound(world.audio);
+        showToast(world.hud, `${w.name} bought`);
+        saveWorld(world);
+      } else showToast(world.hud, 'not enough cash');
+    }
+    if (picked.key === 'ammo' && p.cash >= 120) {
+      p.cash -= 120;
+      for (const k of Object.keys(p.ammo)) p.ammo[k] = WEAPONS.slots[Number(k)].ammo;
+      dealSound(world.audio);
+      saveWorld(world);
+    }
+    return;
+  }
+  if (shop.kind === 'food' && picked.key === 'meal' && p.cash >= 25) {
+    p.cash -= 25;
+    healPlayer(p, 100);
+    dealSound(world.audio);
+    saveWorld(world);
+    return;
+  }
+  if (shop.kind === 'garage') {
+    if (picked.key === 'engine') {
+      const res = buyEngine(world.garage, p.cash, world.roster, world.playerCar);
+      if (res.ok) { p.cash -= res.cost; ledgerSpend(world.ledger, res.cost); dealSound(world.audio); saveWorld(world); }
+      else showToast(world.hud, res.reason);
+    }
+    if (picked.key === 'armor') {
+      const res = buyArmor(world.garage, p.cash, world.roster);
+      if (res.ok) { p.cash -= res.cost; ledgerSpend(world.ledger, res.cost); dealSound(world.audio); saveWorld(world); }
+      else showToast(world.hud, res.reason);
+    }
+    if (picked.key === 'nitro') {
+      const res = buyNitro(world.garage, p.cash, world.roster);
+      if (res.ok) { p.cash -= res.cost; ledgerSpend(world.ledger, res.cost); dealSound(world.audio); saveWorld(world); }
+      else showToast(world.hud, res.reason);
+    }
+    if (picked.key.startsWith('paint-')) {
+      const res = buyPaint(world.garage, p.cash, world.roster, Number(picked.key.slice(6)));
+      if (res.ok) { p.cash -= res.cost; ledgerSpend(world.ledger, res.cost); dealSound(world.audio); saveWorld(world); }
+      else showToast(world.hud, res.reason);
+    }
+  }
+}
+
+function tickChopShop(world) {
+  // Selling a stolen sport car at the Chop Shop pays the fence cut.
+  if (!world.player.inCar || !world.playerCar) return;
+  const shop = SPOTS.chopShop;
+  const car = world.playerCar;
+  const dx = car.x - shop.x;
+  const dz = car.z - shop.z;
+  if (dx * dx + dz * dz > 12 * 12) return;
+  if (car.model === 'police') return;
+  if (world.chopCooldown > 0) return;
+  const payout = Math.round(car.value * ECONOMY.fenceCut);
+  world.player.cash += payout;
+  world.sessionEarned += payout;
+  ledgerEarn(world.ledger, payout);
+  cashSound(world.audio);
+  showToast(world.hud, `Chop Shop paid $${payout}`);
+  exitCar(world);
+  // The sold car is gone; a fresh sedan waits at the Hideout.
+  world.car = spawnCar('sedan', SPOTS.hideout.x + 6, SPOTS.hideout.z, 0);
+  world.chopCooldown = 5;
+  saveWorld(world);
+}
+
+function tickMissions(world, dt) {
+  const game = {
+    player: world.player,
+    car: world.playerCar,
+    empire: world.empire,
+    roster: world.roster,
+    streetRaces: world.streetRaces,
+    clock: world.clock,
+    city: world.city,
+    sessionEarned: world.sessionEarned,
+    ledger: world.ledger,
+    mission: world.missions,
+  };
+  // M10 Heat Lock: while mission 10 is active and the player is at 5 stars,
+  // the heat holds.
+  const cur = currentMission(world.missions);
+  if (cur && cur.id === 'm10' && world.player.wanted >= 5) world.heat.locked = true;
+  else world.heat.locked = false;
+  const before = world.missions.index;
+  tickMission(world.missions, game, dt);
+  world.sessionEarned = game.sessionEarned;
+  if (world.missions.index !== before) {
+    const done = MISSIONS[before];
+    missionSound(world.audio);
+    showBanner(world.hud, `${done.name} — DONE`, `+$${ECONOMY.missionPayout[before]}`, 4);
+    const next = currentMission(world.missions);
+    if (next) {
+      showToast(world.hud, `Next: ${next.name} — ${next.brief}`);
+      startMission(world.missions);
+    } else {
+      showBanner(world.hud, 'SOLMAR IS YOURS', 'Every mission done. The city is yours, Leo.', 6);
+    }
+    saveWorld(world);
+  }
+}
+
+function tickEmpire(world, dt) {
+  const empireHours = (world.clock.hour - world.empireHour + 24) % 24;
+  // A clock jump banks the hours it skipped. The clock only ever moves
+  // forward in normal play, so any positive forward delta is real income.
+  if (empireHours > 0) {
+    const paid = accrueEmpire(world.empire, world.clock, empireHours);
+    if (paid > 0) {
+      world.player.cash += paid;
+      world.sessionEarned += paid;
+      ledgerEarn(world.ledger, paid);
+    }
+  }
+  world.empireHour = world.clock.hour;
+}
+
+function tickRaces(world, dt) {
+  if (!world.streetRaces.active) return;
+  raceTick(world.streetRaces, dt);
+  const car = world.playerCar;
+  if (!car) return;
+  if (raceGatePassed(world.streetRaces, car.x, car.z)) {
+    cashSound(world.audio);
+    const active = world.streetRaces.active;
+    if (active) showToast(world.hud, `Gate ${active.gate}/${active.gates.length}`);
+  }
+  if (raceFinished(world.streetRaces)) {
+    const wonBefore = world.streetRaces.won;
+    const res = finishRace(world.streetRaces, world.weather);
+    if (res.ok) {
+      world.player.cash += res.prize;
+      world.sessionEarned += res.prize;
+      ledgerEarn(world.ledger, res.prize);
+      ledgerRace(world.ledger, true);
+      world.player.respect += 90;
+      missionSound(world.audio);
+      showBanner(world.hud, 'RACE WON', `+$${res.prize} in ${res.seconds}s`, 4);
+      makeGateMeshes(world.view, []);
+      saveWorld(world);
+    }
+  }
+}
+
+// --- The loop, the HUD data, and boot ---
+
+function hudData(world) {
+  const { tier, next } = respectTier(world.player.respect);
+  const cur = currentMission(world.missions);
+  const step = currentStep(world.missions);
+  const district = districtAt(world.player.x, world.player.z);
+  const ventureDefs = {};
+  for (const v of [{ id: 'solmar-laundry', label: 'Solmar Laundry' }, { id: 'palm-wash', label: 'Palm Wash' }, { id: 'sunset-taxi', label: 'Sunset Taxi Co.' }, { id: 'neon-palms', label: 'Neon Palms Club' }]) {
+    ventureDefs[v.id] = v;
+  }
+  const weaponSlots = WEAPONS.slots.map((w, i) => {
+    if (i === 0) return 'FISTS';
+    const ammo = world.player.ammo[i] || 0;
+    return `${w.name.toUpperCase()} ${ammo}`;
+  });
+  const active = world.streetRaces.active;
+  const raceDefNow = active ? raceDef(active.id) : null;
+  return {
+    player: world.player,
+    mission: cur ? { name: cur.name, stepText: step ? step.text : '', index: world.missions.index } : { name: '', stepText: '', index: world.missions.index },
+    district: district.label,
+    respectTier: tier,
+    respectNext: next,
+    empire: world.empire,
+    empireHourly: empireHourly(world.empire, world.clock),
+    ventureDefs,
+    crewNames: crewNames(world.roster),
+    streetRaces: {
+      active: active ? { id: active.id, label: raceDefNow ? raceDefNow.label : active.id, gate: active.gate, gates: active.gates, elapsed: active.elapsed, par: raceDefNow ? raceDefNow.par : 0 } : null,
+    },
+    garageSummary: garageSummary(world.garage),
+    weaponSlots,
+    clock: world.clock,
+    clockLabel: clockLabel(world.clock),
+    speedKmh: world.playerCar ? kmh(world.playerCar) : 0,
+    heli: world.heli,
+    ventureDots: Object.keys(world.empire.owned).map((id) => ventureSpot(world.city, id)),
+    gateDots: active ? active.gates.slice(active.gate) : [],
+    radio: world.radio,
+  };
+}
+
+function exposeGame(world) {
+  // The debug handle the playtest and the screenshots use.
+  const game = {
+    time: world.time,
+    player: world.player,
+    mission: world.missions,
+    missions: world.missions,
+    objectiveText: world.missionObjective,
+    daynight: world.clock,
+    clock: world.clock,
+    nightFactor: world.clock.isNight ? 1 : 0,
+    peds: world.crowd,
+    shoppers: world.shoppers,
+    stats: world.ledger,
+    ledger: world.ledger,
+    empire: world.empire,
+    roster: world.roster,
+    crew: world.roster,
+    streetRaces: world.streetRaces,
+    races: world.streetRaces,
+    garage: world.garage,
+    upgrades: world.garage,
+    city: world.city,
+    weather: world.weather,
+    car: world.playerCar,
+    cars: [world.car, ...world.traffic],
+    cops: world.cops,
+    policeCars: world.cops,
+    heli: world.heli,
+    heat: world.heat,
+    sessionEarned: world.sessionEarned,
+    shopOpen: world.shopOpen,
+    shopNear: world.shopNear,
+    garageOpen: world.shopOpen && world.shopOpen.kind === 'garage',
+    paused: world.paused,
+    saved: world.saved,
+    saveAt: world.saveAt,
+  };
+  window.__game = game;
+  return game;
+}
+
+function tick(world, dt) {
+  if (world.paused || world.over) return;
+  world.time += dt;
+  const keys = readKeys(world.input);
+  // First gesture starts the audio (browsers demand it).
+  if (keys.any) startAudio(world.audio);
+  if (keys.radio) {
+    world.radio = !world.radio;
+    setRadio(world.audio, world.radio);
+  }
+  if (keys.enter && !world.player.inCar) {
+    const near = nearestCar(world, world.player.x, world.player.z, 6);
+    if (near) enterCar(world, near);
+  }
+  if (keys.exit && world.player.inCar) exitCar(world);
+  if (keys.abandon && world.streetRaces.active) {
+    abandonRace(world.streetRaces);
+    makeGateMeshes(world.view, []);
+    showToast(world.hud, 'Race abandoned');
+  }
+  tickPlayer(world, keys, dt);
+  tickTraffic(world, dt);
+  tickCrowd(world.crowd, world.player, dt);
+  tickShoppers(world.shoppers, dt);
+  if (world.player.wanted > 0) tickCops(world, dt);
+  else world.cops = [];
+  tickHeli(world, dt);
+  tickHeat(world, dt);
+  tickClock(world.clock, dt);
+  tickWeather(world.weather, world.dice, dt);
+  tickEmpire(world, dt);
+  tickRaces(world, dt);
+  tickMissions(world, dt);
+  // The objective line the HUD and the playtest read.
+  const curMission = currentMission(world.missions);
+  const curStep = currentStep(world.missions);
+  world.missionObjective = curMission
+    ? `${curMission.name} — ${curStep ? curStep.text : 'Done'}`
+    : 'Free roam';
+  tickShop(world, keys);
+  tickChopShop(world);
+  tickMates(world, dt);
+  if (world.chopCooldown > 0) world.chopCooldown -= dt;
+  if (world.radio) radioTick(world.audio);
+  // Scare the crowd when a chase screams past.
+  if (world.player.wanted >= 2 && world.player.inCar && world.playerCar && world.playerCar.speed > 18) {
+    scareCrowd(world.crowd, world.player.x, world.player.z, 26);
+  }
+  drawHud(world.hud, hudData(world));
+  renderFrame(world.view, {
+    cars: [world.car, ...world.traffic],
+    playerCar: world.playerCar,
+    peds: world.crowd,
+    shoppers: world.shoppers,
+    heli: world.heli,
+    player: world.player,
+    clock: world.clock,
+  }, dt, world.time);
+  exposeGame(world);
+}
+
+function stageShot(world, shot) {
+  // A ?shot= URL stages one fixed scene for the screenshots, instead of
+  // running the loop. The cover keeps the heli and the mission banner.
+  const game = exposeGame(world);
+  if (shot === 'cover') {
+    world.player.wanted = 4;
+    world.heli.active = true;
+    world.heli.x = world.player.x + 30;
+    world.heli.z = world.player.z - 60;
+    world.clock.hour = 17.3;
+    world.clock.golden = true;
+    startMission(world.missions);
+    showBanner(world.hud, 'Drive to the Garage — do not get busted', 'Mission 1 · Wheels Up', 30);
+  }
+  if (shot === 'drive') {
+    world.player.inCar = true;
+    world.playerCar = world.car;
+    world.car.model = 'sport';
+    world.car.color = 0xff5a3c;
+    applyEngine(world.car, 2);
+    world.garage.nitro = 2;
+    world.clock.hour = 17.6;
+    world.clock.golden = true;
+  }
+  if (shot === 'mission') {
+    world.missions.index = 10;
+    startMission(world.missions);
+    buyVenture(world.empire, 'sunset-taxi', 99999);
+    world.player.x = SPOTS.taxiOffice.x;
+    world.player.z = SPOTS.taxiOffice.z;
+    world.clock.hour = 17.3;
+    world.clock.golden = true;
+    showBanner(world.hud, 'Empire Rising — your taxi office pays $90 an hour', 'Mission 11 · Empire Rising', 30);
+  }
+  if (shot === 'night') {
+    world.clock.hour = 22;
+    world.clock.isNight = true;
+    world.clock.lampGlow = 1;
+    world.player.inCar = true;
+    world.playerCar = world.car;
+    world.heli.active = true;
+    world.heli.night = true;
+    world.garage.nitro = 2;
+  }
+  drawHud(world.hud, hudData(world));
+  // Snap the chase cam onto the car for the driving shots (the live loop
+  // eases there over many frames; a still has only two). On foot, keep the
+  // wide establishing camera — a close chase cam behind a pedestrian is
+  // blocked by the nearest building and loses the helicopter.
+  if (world.player.inCar && world.playerCar) {
+    snapCamera(world.view, { x: world.playerCar.x, z: world.playerCar.z, heading: world.playerCar.heading });
+  }
+  renderFrame(world.view, {
+    cars: [world.car, ...world.traffic],
+    playerCar: world.playerCar,
+    peds: world.crowd,
+    shoppers: world.shoppers,
+    heli: world.heli,
+    player: world.player,
+    clock: world.clock,
+  }, 0.016, 1);
+  exposeGame(world);
+  // Paint twice so the first frame is never blank.
+  renderFrame(world.view, {
+    cars: [world.car, ...world.traffic],
+    playerCar: world.playerCar,
+    peds: world.crowd,
+    shoppers: world.shoppers,
+    heli: world.heli,
+    player: world.player,
+    clock: world.clock,
+  }, 0.016, 1.1);
+  return game;
+}
+
+function boot() {
+  const params = new URLSearchParams(window.location.search);
+  const shot = params.get('shot');
+  const seed = Number(params.get('seed') || 1);
+  const world = buildWorld(seed);
+  const gameCanvas = document.getElementById('game');
+  const hudCanvas = document.getElementById('hud');
+  world.view = initRenderer(gameCanvas, world.city);
+  world.hud = initHud(hudCanvas);
+  resizeHud(world.hud, window.innerWidth, window.innerHeight);
+  world.input = initInput();
+  // Venture markers and race gates on the map from the start.
+  makeVentureMarkers(world.view, Object.keys(world.empire.owned).map((id) => ventureSpot(world.city, id)));
+  makeGateMeshes(world.view, []);
+  startMission(world.missions);
+  window.addEventListener('resize', () => {
+    resizeRenderer(world.view);
+    resizeHud(world.hud, window.innerWidth, window.innerHeight);
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
+      if (world.shopOpen) { world.shopOpen = null; showPrompt(world.hud, null); }
+      else {
+        world.paused = !world.paused;
+        if (world.paused) saveWorld(world);
+      }
+    }
+  });
+  if (shot) {
+    stageShot(world, shot);
+    window.__shotReady = true;
+    return world;
+  }
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    tick(world, dt);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  return world;
+}
+
+boot();

@@ -1,469 +1,275 @@
-// Missions and side work. Mara, the fixer, calls Leo with a chain of ten
-// story jobs; between them the city offers taxi fares, street races and ten
-// hidden packages. A mission is a list of objectives; each one points at a
-// place and pays when the player gets there (or does the job) in time.
-import { MISSION_REWARD, TAXI_FARE, PACKAGE_BONUS, HIDDEN_PACKAGES, RACES, SMUGGLE } from './config.js';
-import { empireVentureCount } from './empire.js';
-import { crewHiredCount } from './crew.js';
-import { racesWonCount } from './races.js';
+// Story missions (v6 rewrite).
+// Mara the fixer calls Leo with a chain of twelve jobs, from stealing his
+// first car to running an empire. Each mission is a list of steps; a step
+// is a small goal the game can test (reach a spot, hold a wanted level,
+// own a business, win a race). The mission engine walks the steps in order,
+// pays the reward at the end, and hands the next mission to the HUD.
 
-// Twelve story jobs, in order. `time` is a mission-wide countdown, `wanted` is
-// the heat Mara puts on Leo when the job starts. Step types: steal (get in a
-// car), goto (reach a place), grab (stay put), wanted (reach a wanted level),
-// race (checkpoints in order), survive (stay alive for `time` seconds),
-// drop (deliver a package: pays on the spot and raises the heat a star),
-// own (hold a business), hire (have a crew mate), win (have won a race).
-// `heatLock` on a job means the wanted level cannot decay below its start
-// while the job runs.
-export const STORY = [
+import { ECONOMY } from './config.js';
+
+export const MISSIONS = [
   {
-    id: 'wheels',
-    title: 'Wheels Up',
-    brief: 'Mara: "Leo, you need wheels. Jack any car on the street and bring it to my garage."',
-    reward: MISSION_REWARD[0],
+    id: 'm1',
+    name: 'Wheels Up',
+    brief: 'Steal a car and bring it to the Garage. Do not get busted.',
     steps: [
-      { type: 'steal', text: 'Steal a car (walk up to one and press E)' },
-      { type: 'goto', place: 'garage', text: "Drive it to Mara's Garage" },
+      { kind: 'car', text: 'Steal a car' },
+      { kind: 'goto', spot: 'garage', text: 'Drive to the Garage' },
     ],
   },
   {
-    id: 'delivery',
-    title: 'Special Delivery',
-    brief: 'Mara: "Three parcels, three corners of Solmar, 150 seconds. The bike boys are watching."',
-    reward: MISSION_REWARD[1],
-    time: 150,
+    id: 'm2',
+    name: 'First Fare',
+    brief: 'The taxi office needs a driver. Pick up the fare and drop them at the Plaza.',
     steps: [
-      { type: 'goto', place: 'marina', text: 'Deliver parcel 1: Marina Solmar' },
-      { type: 'goto', place: 'beachbar', text: 'Deliver parcel 2: Playa Bar' },
-      { type: 'goto', place: 'portbank', text: 'Deliver parcel 3: Portside Bank' },
+      { kind: 'goto', spot: 'taxiOffice', text: 'Go to Sunset Taxi Co.' },
+      { kind: 'goto', spot: 'plaza', text: 'Drop the fare at Central Plaza' },
     ],
   },
   {
-    id: 'heat',
-    title: 'Hot Pursuit',
-    brief: 'Mara: "The SCPD is on you, two stars. Lose them — Spray & Go on the east side will scrub the car clean."',
-    reward: MISSION_REWARD[2],
-    wanted: 2,
+    id: 'm3',
+    name: 'Hot Wheels',
+    brief: 'The cops are on you. Shake two stars of heat and stay free.',
     steps: [
-      { type: 'wanted', text: 'You are wanted! Reach Spray & Go with 2 stars' },
-      { type: 'goto', place: 'spray', text: 'Get the car resprayed at Spray & Go' },
+      { kind: 'wanted', stars: 2, text: 'Get to 2 stars of heat' },
+      { kind: 'lose', text: 'Lose the cops' },
     ],
   },
   {
-    id: 'bayrun',
-    title: 'Bay Run',
-    brief: 'Mara: "Cargo is waiting at the marina. Pick it up and lose the tail — the hideout, Leo. Go."',
-    reward: MISSION_REWARD[3],
-    wanted: 3,
+    id: 'm4',
+    name: 'Night Shift',
+    brief: 'A package has to cross town after dark. Deliver it to the Pier.',
     steps: [
-      { type: 'goto', place: 'marina', text: 'Pick up the cargo at the Marina' },
-      { type: 'goto', place: 'hideout', text: 'Escape to the Hideout' },
+      { kind: 'night', text: 'Wait for nightfall' },
+      { kind: 'goto', spot: 'pier', text: 'Deliver to the Pier' },
     ],
   },
   {
-    id: 'bigone',
-    title: 'The Big One',
-    brief: 'Mara: "Portside Bank. Four stars on your head the moment you grab the cash. This is the one, Leo."',
-    reward: MISSION_REWARD[4],
-    wanted: 4,
+    id: 'm5',
+    name: 'Chop Shop',
+    brief: 'Steal a sport car and sell it at the Chop Shop.',
     steps: [
-      { type: 'goto', place: 'portbank', text: 'Reach Portside Bank' },
-      { type: 'grab', text: 'Grab the cash (stay 4 seconds)' },
-      { type: 'goto', place: 'hideout', text: 'Escape to the Hideout — do not get busted' },
+      { kind: 'sportcar', text: 'Steal a sport car' },
+      { kind: 'goto', spot: 'chopShop', text: 'Sell it at the Chop Shop' },
     ],
   },
   {
-    id: 'streetkings',
-    title: 'Street Kings',
-    brief: 'Mara: "The Palm Strip crews want a race. Three checkpoints, two minutes — win it and the streets talk."',
-    reward: MISSION_REWARD[5],
-    time: 150,
+    id: 'm6',
+    name: 'The Fence',
+    brief: 'Move the goods to the Fence on the east side. No questions.',
     steps: [
-      { type: 'race', checkpoints: ['marina', 'portbank', 'hideout'], text: 'Race the checkpoints: Marina, Portside, Hideout' },
+      { kind: 'goto', spot: 'fence', text: 'Deliver to the Fence' },
+      { kind: 'earn', amount: 500, text: 'Pocket $500 from the deal' },
     ],
   },
   {
-    id: 'airone',
-    title: 'Air One',
-    brief: 'Mara: "Four stars and a helicopter overhead. Stay out of its shadow for 75 seconds, then vanish at the hideout."',
-    reward: MISSION_REWARD[6],
-    wanted: 4,
+    id: 'm7',
+    name: 'Air Support',
+    brief: 'Air One is overhead. Outrun the helicopter at 3 stars.',
     steps: [
-      { type: 'survive', time: 75, text: 'Survive Air One for 75 seconds' },
-      { type: 'goto', place: 'hideout', text: 'Vanish at the Hideout' },
+      { kind: 'wanted', stars: 3, text: 'Get to 3 stars of heat' },
+      { kind: 'survive', seconds: 30, text: 'Survive the heli for 30 seconds' },
     ],
   },
   {
-    id: 'legend',
-    title: 'Solmar Legend',
-    brief: 'Mara: "One last job. Portside Bank, five stars, Air One above. Bring it home, Leo — and the city is yours."',
-    reward: MISSION_REWARD[7],
-    wanted: 5,
+    id: 'm8',
+    name: 'King of the Road',
+    brief: 'Prove it on the street. Win a Sprint race.',
     steps: [
-      { type: 'goto', place: 'portbank', text: 'Reach Portside Bank' },
-      { type: 'grab', text: 'Grab the cash (stay 4 seconds)' },
-      { type: 'goto', place: 'hideout', text: 'Escape to the Hideout — Air One is watching' },
+      { kind: 'race', race: 'sprint', text: 'Win a Sprint race' },
     ],
   },
   {
-    id: 'smuggler',
-    title: "Smuggler's Run",
-    brief: 'Mara: "A package from Portside, three drops across Solmar, 180 seconds. Every drop puts another star on you — keep moving, Leo."',
-    reward: MISSION_REWARD[8],
-    time: 180,
-    wanted: 3,
+    id: 'm9',
+    name: "Smuggler's Run",
+    brief: 'Run contraband across the city. Every drop raises the heat a star.',
     steps: [
-      { type: 'goto', place: 'portbank', text: 'Pick up the package at Portside Bank' },
-      { type: 'drop', place: 'marina', text: 'Drop 1: Marina Solmar — heat rises' },
-      { type: 'drop', place: 'beachbar', text: 'Drop 2: Playa Bar — heat rises' },
-      { type: 'drop', place: 'hideout', text: 'Final drop: the Hideout' },
+      { kind: 'goto', spot: 'pier', text: 'Pick up at the Pier' },
+      { kind: 'drop', spot: 'fence', text: 'Drop at the Fence (heat +1)' },
+      { kind: 'goto', spot: 'hideout', text: 'Get back to the Hideout' },
     ],
   },
   {
-    id: 'heatwave',
-    title: 'Heat Wave',
-    brief: 'Mara: "Five stars, Air One above, and the heat will NOT cool off until you vanish. Ninety seconds, Leo — then the hideout."',
-    reward: MISSION_REWARD[9],
-    wanted: 5,
-    heatLock: true,
+    id: 'm10',
+    name: 'Heat Wave',
+    brief: 'Five stars. The whole city is after you. Hold it and live.',
     steps: [
-      { type: 'survive', time: 90, text: 'Ride out the five-star heat for 90 seconds' },
-      { type: 'goto', place: 'hideout', text: 'Vanish at the Hideout' },
+      { kind: 'wanted', stars: 5, text: 'Reach 5 stars of heat' },
+      { kind: 'hold', seconds: 20, text: 'Hold 5 stars for 20 seconds' },
     ],
   },
   {
-    id: 'empire',
-    title: 'Empire Rising',
-    brief: 'Mara: "Time to own a piece of Solmar, Leo. Buy a storefront, then run one delivery for it — the city pays its owners."',
-    reward: MISSION_REWARD[10],
+    id: 'm11',
+    name: 'Empire Rising',
+    brief: 'Stop working for other people. Buy your first business, then drop a package at the Laundry.',
     steps: [
-      { type: 'own', text: 'Buy your first business (drive to a storefront, press E)' },
-      { type: 'drop', place: 'laundry', text: 'Deliver the parcel to Solmar Laundry' },
+      { kind: 'buy', text: 'Buy your first business' },
+      { kind: 'drop', spot: 'laundry', text: 'Drop at Solmar Laundry (+$150)' },
     ],
   },
   {
-    id: 'crewup',
-    title: 'Crew Up',
-    brief: 'Mara: "A boss needs a crew. Hire one specialist at the Overpass Bar, then win a street race with them watching."',
-    reward: MISSION_REWARD[11],
+    id: 'm12',
+    name: 'Crew Up',
+    brief: 'No one runs an empire alone. Hire one crew mate, then win a race with them behind you.',
     steps: [
-      { type: 'hire', text: 'Hire one crew mate at The Overpass Bar' },
-      { type: 'win', text: 'Win one street race at the Portside Drag Strip' },
+      { kind: 'hire', text: 'Hire one crew mate' },
+      { kind: 'race', race: 'sprint', text: 'Win a race' },
     ],
   },
 ];
 
-// ---------------------------------------------------------------------------
-// Mission state
-// ---------------------------------------------------------------------------
-
-export function createMissionState() {
+export function initMissions() {
   return {
     index: 0,
     step: 0,
-    active: false,
+    done: [],
     timer: 0,
-    grabTimer: 0,
-    done: false,
-    taxi: null,
-    taxiTimer: 0,
-    packagesFound: 0,
-    completed: [],
-    raceCheck: null,
-    surviveTimer: 0,
+    earned: 0,
+    started: false,
   };
 }
 
-export function currentMission(state) {
-  if (state.index >= STORY.length) return null;
-  return STORY[state.index];
+export function currentMission(missions) {
+  return MISSIONS[missions.index] || null;
 }
 
-export function currentStep(state) {
-  const mission = currentMission(state);
-  if (!mission) return null;
-  return mission.steps[state.step];
+export function currentStep(missions) {
+  const m = currentMission(missions);
+  if (!m) return null;
+  return m.steps[missions.step] || null;
 }
 
-/** The place key of the current race checkpoint, or null. */
-export function currentRaceCheckpoint(state) {
-  const step = currentStep(state);
-  if (!step || step.type !== 'race' || !state.raceCheck) return null;
-  return step.checkpoints[state.raceCheck.index] || null;
+export function missionReward(missions) {
+  const m = currentMission(missions);
+  if (!m) return 0;
+  return ECONOMY.missionPayout[missions.index] || 0;
 }
 
-// ---------------------------------------------------------------------------
-// Starting, failing, completing
-// ---------------------------------------------------------------------------
-
-export function startMission(state, audio) {
-  const mission = currentMission(state);
-  if (!mission) return false;
-  state.active = true;
-  state.step = 0;
-  state.timer = mission.time || 0;
-  state.grabTimer = 0;
-  if (mission.wanted) state.pendingWanted = mission.wanted;
-  if (audio) audio.blip();
-  return true;
+export function missionName(missions) {
+  const m = currentMission(missions);
+  return m ? m.name : 'Done';
 }
 
-export function failMission(state) {
-  state.active = false;
-  state.step = 0;
-  state.timer = 0;
-  state.grabTimer = 0;
-  state.raceCheck = null;
-  state.surviveTimer = 0;
+export function missionBrief(missions) {
+  const m = currentMission(missions);
+  return m ? m.brief : 'Every job is done. Solmar is yours.';
 }
 
-export function completeMission(state, player, audio) {
-  const mission = currentMission(state);
-  if (!mission) return 0;
-  player.cash += mission.reward;
-  state.completed.push(mission.id);
-  state.index += 1;
-  state.active = false;
-  state.step = 0;
-  state.timer = 0;
-  state.grabTimer = 0;
-  if (state.index >= STORY.length) state.done = true;
-  state.raceCheck = null;
-  state.surviveTimer = 0;
-  if (audio) audio.missionDone();
-  return mission.reward;
+export function startMission(missions) {
+  missions.started = true;
+  missions.step = 0;
+  missions.timer = 0;
+  return missions;
 }
 
-/** Advance one step; complete the mission when the last step is done. */
-function advanceStep(state, player, audio) {
-  const mission = currentMission(state);
-  state.step += 1;
-  if (state.step >= mission.steps.length) {
-    const reward = completeMission(state, player, audio);
-    return `mission-done:${reward}`;
+export function stepDone(missions) {
+  const m = currentMission(missions);
+  if (!m) return false;
+  return missions.step >= m.steps.length;
+}
+
+export function advanceStep(missions) {
+  missions.step += 1;
+  missions.timer = 0;
+  return missions;
+}
+
+export function completeMission(missions) {
+  const m = currentMission(missions);
+  if (!m) return { ok: false, reward: 0 };
+  const reward = missionReward(missions);
+  missions.done.push(m.id);
+  missions.earned += reward;
+  missions.index += 1;
+  missions.step = 0;
+  missions.timer = 0;
+  missions.started = false;
+  return { ok: true, reward, next: currentMission(missions) };
+}
+
+export function missionProgress(missions) {
+  const m = currentMission(missions);
+  if (!m) return { done: MISSIONS.length, total: MISSIONS.length };
+  return { done: missions.index, total: MISSIONS.length, step: missions.step, steps: m.steps.length };
+}
+
+// Step tests. Each one reads the live game and says whether its step is met.
+// `game` is the window.__game shape: player, empire, roster, streetRaces, clock, city.
+export function stepMet(step, game) {
+  if (!step) return false;
+  switch (step.kind) {
+    case 'car':
+      return !!game.player.inCar;
+    case 'goto': {
+      const spot = game.city.spots[step.spot];
+      if (!spot) return false;
+      const px = game.player.inCar ? game.car.x : game.player.x;
+      const pz = game.player.inCar ? game.car.z : game.player.z;
+      const dx = px - spot.x;
+      const dz = pz - spot.z;
+      return dx * dx + dz * dz < 14 * 14;
+    }
+    case 'wanted':
+      return game.player.wanted >= step.stars;
+    case 'lose':
+      return game.player.wanted === 0;
+    case 'night':
+      return game.clock.isNight;
+    case 'sportcar':
+      return !!game.player.inCar && game.car && game.car.model === 'sport';
+    case 'earn':
+      return game.sessionEarned >= step.amount;
+    case 'survive':
+    case 'hold':
+      return game.mission.timer >= step.seconds;
+    case 'race':
+      return game.streetRaces.won > (game.mission.raceWonAt || 0);
+    case 'drop': {
+      const spot = game.city.spots[step.spot];
+      if (!spot) return false;
+      const px = game.player.inCar ? game.car.x : game.player.x;
+      const pz = game.player.inCar ? game.car.z : game.player.z;
+      const dx = px - spot.x;
+      const dz = pz - spot.z;
+      return dx * dx + dz * dz < 14 * 14;
+    }
+    case 'buy':
+      return Object.keys(game.empire.owned || {}).length > 0;
+    case 'hire':
+      return Object.keys(game.roster.hired || {}).length > 0;
+    default:
+      return false;
   }
-  return 'step-done';
 }
 
-/** Is the player within `radius` of a place? */
-function atPlace(player, place, radius) {
-  return place && Math.hypot(player.x - place.x, player.y - place.y) < radius;
-}
-
-// ---------------------------------------------------------------------------
-// Stepping a mission
-// ---------------------------------------------------------------------------
-
-/** Advance mission logic one step. Returns an event string or null. */
-export function stepMission(state, player, city, dt, audio) {
-  if (!state.active) return null;
-  const mission = currentMission(state);
-  if (!mission) return null;
-  if (state.timer > 0) {
-    state.timer -= dt;
-    if (state.timer <= 0) {
-      failMission(state);
-      return 'mission-failed';
+export function tickMission(missions, game, dt) {
+  const step = currentStep(missions);
+  if (!step) return missions;
+  // Timed steps count up while their condition holds.
+  if (step.kind === 'survive' || step.kind === 'hold') {
+    const holding = step.kind === 'survive'
+      ? game.player.wanted >= 3
+      : game.player.wanted >= 5;
+    if (holding) missions.timer += dt;
+    else missions.timer = 0;
+  }
+  if (stepMet(step, game)) {
+    advanceStep(missions);
+    // A drop step pays its bonus and raises the heat, once, when met.
+    if (step.kind === 'drop') {
+      game.player.cash += 150;
+      game.sessionEarned = (game.sessionEarned || 0) + 150;
+      if (game.player.wanted < 5) game.player.wanted += 1;
     }
   }
-  const step = currentStep(state);
-  if (!step) return null;
-  const place = step.place ? city.places[step.place] : null;
-  if (step.type === 'steal') {
-    if (!player.onFoot) return advanceStep(state, player, audio);
-    return null;
-  }
-  if (step.type === 'goto' && place) {
-    if (atPlace(player, place, 90)) {
-      if (audio) audio.coin();
-      return advanceStep(state, player, audio);
-    }
-    return null;
-  }
-  if (step.type === 'drop' && place) {
-    // A smuggler's drop: the package changes hands, the cash lands on the
-    // spot, and the heat climbs a star — the job gets harder with every stop.
-    if (atPlace(player, place, 90)) {
-      player.cash += SMUGGLE.dropBonus;
-      player.wanted = Math.min(5, player.wanted + SMUGGLE.dropHeat);
-      player.wantedTimer = 0;
-      if (audio) audio.wantedUp();
-      const outcome = advanceStep(state, player, audio);
-      if (outcome.startsWith('mission-done:')) return outcome;
-      return `drop:${player.wanted}`;
-    }
-    return null;
-  }
-  if (step.type === 'grab') {
-    if (atPlace(player, city.places.portbank, 110)) {
-      state.grabTimer += dt;
-      if (state.grabTimer >= 4) {
-        state.grabTimer = 0;
-        return advanceStep(state, player, audio);
-      }
-    } else {
-      state.grabTimer = 0;
-    }
-    return null;
-  }
-  if (step.type === 'wanted') {
-    if (player.wanted >= 2) return advanceStep(state, player, audio);
-    return null;
-  }
-  if (step.type === 'race') {
-    // Checkpoint chain: hit each place in order before the timer runs out.
-    if (!state.raceCheck) state.raceCheck = { index: 0 };
-    const key = step.checkpoints[state.raceCheck.index];
-    if (atPlace(player, city.places[key], 90)) {
-      state.raceCheck.index += 1;
-      if (audio) audio.coin();
-      if (state.raceCheck.index >= step.checkpoints.length) {
-        state.raceCheck = null;
-        return advanceStep(state, player, audio);
-      }
-      return 'step-done';
-    }
-    return null;
-  }
-  if (step.type === 'survive') {
-    // Stay alive and wanted for `time` seconds; the heli never lets go.
-    if (!state.surviveTimer) state.surviveTimer = step.time;
-    state.surviveTimer -= dt;
-    if (state.surviveTimer <= 0) {
-      state.surviveTimer = 0;
-      return advanceStep(state, player, audio);
-    }
-    return null;
-  }
-  if (step.type === 'own') {
-    // Empire Rising: the step clears the moment Leo holds any storefront.
-    // The empire itself lives on the mission state (the loop attaches it).
-    if (state.empire && empireVentureCount(state.empire) >= 1) {
-      return advanceStep(state, player, audio);
-    }
-    return null;
-  }
-  if (step.type === 'hire') {
-    // Crew Up: the step clears once a specialist is on the roster.
-    if (state.roster && crewHiredCount(state.roster) >= 1) {
-      return advanceStep(state, player, audio);
-    }
-    return null;
-  }
-  if (step.type === 'win') {
-    // Crew Up: the step clears once Leo has won a street series race.
-    if (state.streetRaces && racesWonCount(state.streetRaces) >= 1) {
-      return advanceStep(state, player, audio);
-    }
-    return null;
-  }
-  return null;
-}
-
-// ---------------------------------------------------------------------------
-// Taxi fares
-// ---------------------------------------------------------------------------
-
-/** Start a taxi fare: a waiting ped wants a ride to a random place. */
-export function startTaxi(state, player, city, random) {
-  const keys = Object.keys(city.places);
-  const dest = city.places[keys[Math.floor(random() * keys.length)]];
-  state.taxi = { dest, timer: 90, pickedUp: false };
-  state.taxiTimer = 90;
-  return dest;
-}
-
-/** Step the active taxi fare. Returns an event string or null. */
-export function stepTaxi(state, player, dt, audio) {
-  if (!state.taxi) return null;
-  state.taxi.timer -= dt;
-  if (state.taxi.timer <= 0) {
-    state.taxi = null;
-    return 'taxi-late';
-  }
-  return null;
-}
-
-/** Pay the fare out when the passenger is dropped off. `payMult` lifts the
- * fare after dark (the night pays better); it defaults to 1 in daylight. */
-export function finishTaxi(state, player, audio, payMult = 1) {
-  if (!state.taxi) return 0;
-  const fare = Math.round((TAXI_FARE + Math.floor(Math.random() * 60)) * payMult);
-  player.cash += fare;
-  state.taxi = null;
-  if (audio) audio.coin();
-  return fare;
-}
-
-// ---------------------------------------------------------------------------
-// Hidden packages
-// ---------------------------------------------------------------------------
-
-/** Check hidden packages: the player walks over one. Returns 1 when found. */
-export function checkPackages(state, player, city, audio) {
-  for (const pack of city.hiddenPackages) {
-    if (pack.found) continue;
-    const d = Math.hypot(player.x - pack.x, player.y - pack.y);
-    if (d < 40) {
-      pack.found = true;
-      state.packagesFound += 1;
-      player.cash += PACKAGE_BONUS;
-      if (audio) audio.coin();
-      return 1;
+  if (stepDone(missions)) {
+    const done = completeMission(missions);
+    if (done.ok) {
+      game.player.cash += done.reward;
+      game.sessionEarned = (game.sessionEarned || 0) + done.reward;
+      game.ledger.earned += done.reward;
+      game.ledger.missionsDone += 1;
     }
   }
-  return 0;
-}
-
-export function packagesLeft(state) {
-  return HIDDEN_PACKAGES - state.packagesFound;
-}
-
-// ---------------------------------------------------------------------------
-// Street races: a side activity at the Palm Strip flag. Three checkpoints,
-// timed; win cash and respect, and the best time is saved with the career.
-// ---------------------------------------------------------------------------
-
-export function createRaceState() {
-  return { active: false, checkpoint: 0, timer: 0, elapsed: 0, best: null };
-}
-
-/** Start a race: the first checkpoint is the return value. */
-export function startRace(state, player, city, random) {
-  state.active = true;
-  state.checkpoint = 0;
-  state.timer = RACES.timeLimit;
-  state.elapsed = 0;
-  return city.places[RACES.checkpoints[0]];
-}
-
-/** Step the active race. Returns an event string or null. */
-export function stepRace(state, player, city, dt, audio) {
-  if (!state.active) return null;
-  state.timer -= dt;
-  state.elapsed += dt;
-  if (state.timer <= 0) {
-    state.active = false;
-    return 'race-failed';
-  }
-  const place = city.places[RACES.checkpoints[state.checkpoint]];
-  if (atPlace(player, place, 90)) {
-    state.checkpoint += 1;
-    if (audio) audio.coin();
-    if (state.checkpoint >= RACES.checkpoints.length) {
-      state.active = false;
-      return `race-done:${state.elapsed}`;
-    }
-    return 'race-checkpoint';
-  }
-  return null;
-}
-
-/** Pay the race win and record the best time. */
-export function finishRace(state, player, audio, payMult = 1) {
-  const reward = Math.round(RACES.reward * payMult);
-  player.cash += reward;
-  if (state.best === null || state.elapsed < state.best) state.best = state.elapsed;
-  if (audio) audio.missionDone();
-  return reward;
+  return missions;
 }

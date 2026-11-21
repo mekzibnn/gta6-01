@@ -1,3 +1,4 @@
+Attribution — three.js r187, vendored for Solmar Heat v6 (gta 06 v6, round 6); the game renders its whole low-poly city with this library, loaded offline from the vendor folder.
 Attribution — three.js r187, vendored for Solmar Heat v3 (gta 06 v3).
 The game loads it offline from game/vendor/three.module.min.js (which
 re-exports game/vendor/three.core.min.js) through the import map in

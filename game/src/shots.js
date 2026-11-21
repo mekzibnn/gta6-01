@@ -1,203 +1,65 @@
-// The screenshot scenes behind ?shot=cover|drive|mission|night. Each one
-// plays the real rules forward from a fresh seeded world for a fixed number
-// of steps, steered by a simple autopilot (drive along the road, keep clear
-// of the car ahead), so the frame is what a short game really looks like.
-// The same seed always gives the same streets; the scenes are staged, never
-// drawn by hand.
-import { STEP, WORLD } from './config.js';
-import { stepDrivenCar, stepTrafficCar, stepPoliceCar, createCar, createHelicopter, stepHelicopter } from './vehicles.js';
-import { buyVenture } from './empire.js';
-import { stepPeds } from './peds.js';
-import { startMission } from './missions.js';
+// The screenshot scenes behind ?shot=cover|drive|mission|night (v6 rewrite).
+// Each shot stages one fixed moment for the entry's screenshots: a four-star
+// chase at golden hour with Air One parked ahead below the mission banner
+// (cover), a golden-hour cruise in a garage-tuned sport car (drive), the
+// Empire Rising mission at the taxi office with the empire widget showing
+// (mission), and downtown after dark with the lamps lit (night). main.js
+// calls stageShot for the shot named in the URL; this module only names the
+// shots and what each one needs, so the dossier and the playtest can list
+// them without booting the game.
 
-/** Drive straight along the current road for a while. */
-function autopilotDrive(game, seconds) {
-  const steps = Math.floor(seconds / STEP);
-  for (let i = 0; i < steps; i += 1) {
-    const player = game.player;
-    if (player.car) {
-      stepDrivenCar(player.car, { x: 0, y: -1, handbrake: false }, STEP, game.city, game.cars);
-      player.x = player.car.x;
-      player.y = player.car.y;
-      player.angle = player.car.angle;
-    }
-    for (const car of game.cars) {
-      if (car.traffic) stepTrafficCar(car, STEP, game.city, game.cars, game.random);
-    }
-    for (const car of game.policeCars) {
-      stepPoliceCar(car, player, STEP, game.city, game.cars);
-    }
-    if (game.heli) stepHelicopter(game.heli, player, STEP);
-    // The crowd walks its sidewalk routes and runs from the chase.
-    stepPeds(game, STEP);
-    game.time += STEP;
-  }
+export const SHOTS = [
+  {
+    id: 'cover',
+    name: '1-cover.jpg',
+    query: '?shot=cover&seed=1',
+    description: 'Cover: a four-star chase at golden hour, Air One parked ahead below the mission banner',
+    wanted: 4,
+    heli: true,
+    hour: 17.3,
+  },
+  {
+    id: 'drive',
+    name: '2-drive.jpg',
+    query: '?shot=drive&seed=1',
+    description: 'Drive: golden-hour cruise in a garage-tuned sport car — Race engine, sunset-orange paint, two nitro charges',
+    wanted: 0,
+    heli: false,
+    hour: 17.6,
+  },
+  {
+    id: 'mission',
+    name: '3-mission.jpg',
+    query: '?shot=mission&seed=1',
+    description: 'Mission: Empire Rising (mission 11) at Sunset Taxi Co. — the first business is Leo\'s, the empire widget shows in the HUD',
+    wanted: 0,
+    heli: false,
+    hour: 17.3,
+  },
+  {
+    id: 'night',
+    name: '4-night.jpg',
+    query: '?shot=night&seed=1',
+    description: 'Night: downtown after dark — streetlamps lit, headlights on, nitro burning, Air One circling',
+    wanted: 0,
+    heli: true,
+    hour: 22,
+  },
+];
+
+export function shotById(id) {
+  return SHOTS.find((s) => s.id === id) || null;
 }
 
-/** Put the player in a fresh car of `kind` at a position and heading. */
-function putPlayerInCar(game, kind, x, y, angle) {
-  const car = createCar(kind, x, y, angle, game.random);
-  car.parked = false;
-  game.cars.push(car);
-  game.player.car = car;
-  game.player.onFoot = false;
-  game.player.x = x;
-  game.player.y = y;
-  game.player.angle = angle;
-  return car;
+export function shotByName(name) {
+  return SHOTS.find((s) => s.name === name) || null;
 }
 
-/** Set the radio station on the game state and the audio engine together. */
-function setRadio(game, index) {
-  game.radio = index;
-  game.audio.setStation(index);
+export function shotQuery(id) {
+  const shot = shotById(id);
+  return shot ? shot.query : '?shot=cover&seed=1';
 }
 
-/**
- * Park Air One far ahead, over the road the player is driving on: the
- * chase reads better with the helicopter in the frame, not just in the HUD.
- * Far ahead it sits below the centred mission banner (the chase camera
- * looks down, so near things ride high in the frame), and over the road
- * nothing can hide it behind a building. The road is snapped from the
- * player's y (horizontal roads run every 400px from y=150). (v2 parked it
- * at +250/-120, right on the banner; +320/+300 hid it behind Spray & Go;
- * +420/-260 left it cut off at the top edge; +900/-40 showed it, small.)
- */
-function parkHeli(game) {
-  if (!game.heli) return;
-  const roadY = Math.round((game.player.y - 150) / 400) * 400 + 150;
-  game.heli.x = game.player.x + 800;
-  game.heli.y = roadY;
-}
-
-/** `count` police cars in a fan behind the player, turned to face them. */
-function addPoliceChase(game, count, baseDist = 260) {
-  const player = game.player;
-  for (let i = 0; i < count; i += 1) {
-    const behind = player.angle + Math.PI + (i - count / 2) * 0.35;
-    const dist = baseDist + i * 70;
-    const car = createCar('police', player.x + Math.cos(behind) * dist, player.y + Math.sin(behind) * dist, player.angle, game.random);
-    car.speed = 320;
-    game.policeCars.push(car);
-  }
-}
-
-/** One interceptor ahead of the player, turned to face them: a roadblock. */
-function addPoliceAhead(game, dist = 300, lateral = 120) {
-  const player = game.player;
-  const a = player.angle;
-  const x = player.x + Math.cos(a) * dist - Math.sin(a) * lateral;
-  const y = player.y + Math.sin(a) * dist + Math.cos(a) * lateral;
-  const car = createCar('police', x, y, a + Math.PI, game.random);
-  car.speed = 200;
-  game.policeCars.push(car);
-}
-
-/**
- * Set `game` to the named scene and return the screen to draw over it.
- * Names: cover (police chase), drive (golden-hour cruise), mission
- * (Empire Rising at the taxi office, on foot), night (downtown after dark).
- * Any other name is cover.
- */
-export function stageShot(name, game) {
-  const scene = name || 'cover';
-  game.mission.active = false;
-  game.mission.index = 0;
-  game.policeCars = [];
-  game.cops = [];
-  if (scene === 'cover') {
-    // A four-star chase through the middle of town, at golden hour, with Air
-    // One overhead. The road ahead is clear now (landmarks sit inside
-    // blocks), so the car actually accelerates; the police start close and
-    // one cuts in ahead, and the autopilot is short so the whole pack stays
-    // in the frame. Leo's car is painted bright red so it reads as the hero.
-    const coverCar = putPlayerInCar(game, 'sport', 1350, 950, 0);
-    coverCar.paint = '#e74c3c';
-    game.player.cash = 1890;
-    game.player.health = 84;
-    game.player.wanted = 4;
-    game.player.weapon = 'pistol';
-    game.player.ammo = { pistol: 18, smg: 60, shotgun: 8 };
-    game.weaponsOwned = ['fists', 'pistol', 'smg'];
-    game.respect = 1600;
-    setRadio(game, 0);
-    game.shotCam = { dist: 230, height: 130, fov: 66 };
-    game.heli = createHelicopter(game.player.x, game.player.y);
-    game.clock = 17 * 60 + 20;
-    game.mission.index = 3;
-    startMission(game.mission, null);
-    game.missionTarget = game.city.places.hideout;
-    game.objectiveText = 'Escape to the Hideout — do not get busted';
-    addPoliceChase(game, 3, 150);
-    addPoliceAhead(game, 300, 120);
-    autopilotDrive(game, 1.2);
-    parkHeli(game);
-    return { screen: 'play' };
-  }
-  if (scene === 'drive') {
-    // Golden-hour cruise down Palm Strip in a garage-tuned sport car:
-    // Race engine, plated body, sunset-orange paint, two nitro charges in
-    // the boot — the upgrade shop's work, on show. Traffic and pedestrians
-    // keep the street alive around it.
-    const cruise = putPlayerInCar(game, 'sport', 950, 2150, -Math.PI / 2);
-    cruise.paint = '#ff7a3d';
-    game.upgrades = { engine: 2, armor: 1, paint: 7, nitro: 2 };
-    game.player.cash = 860;
-    game.player.health = 100;
-    game.clock = 17 * 60 + 15;
-    game.respect = 100;
-    setRadio(game, 1);
-    game.shotCam = { dist: 280, height: 150, fov: 62 };
-    game.objectiveText = 'Cruise Solmar — next job: Special Delivery';
-    autopilotDrive(game, 3.5);
-    return { screen: 'play' };
-  }
-  if (scene === 'mission') {
-    // On foot at Sunset Taxi Co., Empire Rising (mission 11) live: the taxi
-    // office is already Leo's, so the empire widget shows in the HUD, and
-    // the next step is the laundry drop. Facing the office puts the
-    // storefront and the objective marker in the frame.
-    game.player.onFoot = true;
-    game.player.car = null;
-    game.player.x = game.city.places.taxioffice.x - 60;
-    game.player.y = game.city.places.taxioffice.y + 40;
-    game.player.angle = 0;
-    game.player.cash = 2400;
-    game.player.health = 92;
-    game.clock = 11 * 60 + 20;
-    game.respect = 800;
-    setRadio(game, 0);
-    game.shotCam = { dist: 160, height: 130, fov: 60 };
-    game.player.cash = buyVenture(game.empire, 'sunset-taxi', game.player.cash).cash;
-    game.mission.index = 10;
-    startMission(game.mission, null);
-    game.missionTarget = game.city.places.taxioffice;
-    game.objectiveText = 'Empire Rising — your taxi office pays $90 an hour';
-    autopilotDrive(game, 0.5);
-    return { screen: 'play' };
-  }
-  if (scene === 'night') {
-    // Downtown at night, headlights on, streetlamps lit, Air One circling
-    // overhead — and a nitro charge burning in the sport car, so the chase
-    // leaves a spark trail behind it.
-    const nightCar = putPlayerInCar(game, 'sport', 1750, 1350, 0);
-    nightCar.nitro = 1.2;
-    game.upgrades = { engine: 1, armor: 0, paint: 0, nitro: 1 };
-    game.player.cash = 2340;
-    game.player.health = 78;
-    game.player.wanted = 4;
-    game.clock = 22 * 60 + 40;
-    game.respect = 1600;
-    setRadio(game, 2);
-    game.shotCam = { dist: 300, height: 170, fov: 62 };
-    game.heli = createHelicopter(game.player.x, game.player.y);
-    addPoliceChase(game, 1, 200);
-    game.objectiveText = 'Lose the SCPD — reach Spray & Go';
-    game.missionTarget = game.city.places.spray;
-    autopilotDrive(game, 1.5);
-    parkHeli(game);
-    return { screen: 'play' };
-  }
-  // Unknown scene name: fall back to cover.
-  return stageShot('cover', game);
+export function shotList() {
+  return SHOTS.map((s) => ({ name: s.name, query: s.query, description: s.description }));
 }

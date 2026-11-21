@@ -1,69 +1,86 @@
-// Saving: progress lives in localStorage so a player can continue a career.
-// Only plain numbers and ids are stored, never anything personal.
-import { SAVE_KEY } from './config.js';
-import { serializeEmpire } from './empire.js';
-import { serializeCrew } from './crew.js';
-import { serializeRaces } from './races.js';
+// Career persistence for Solmar Heat (v6 rewrite).
+// Progress lives in localStorage under one versioned key, so a player can
+// close the tab and pick the career up later. The save is nested by system
+// — empire, roster, street races — so each system owns its own corner and
+// the playtest can read it back directly. Nothing here touches the live
+// game state; main.js copies the save in at boot and writes it back on
+// every change.
 
-/** Read the saved career, or null when there is none (or it is corrupt). */
-export function loadSave() {
+export const SAVE_KEY = 'solmar-heat.save.v2';
+
+export function blankCareer() {
+  return {
+    v: 2,
+    cash: 5000,
+    respect: 0,
+    empire: { owned: {}, totalEarned: 0 },
+    roster: { hired: {} },
+    streetRaces: { won: 0, best: {} },
+    missionsDone: [],
+    garage: { engine: 0, armor: 0, nitro: 0, paint: 0 },
+    timePlayed: 0,
+  };
+}
+
+export function readCareer() {
   try {
-    const raw = window.localStorage.getItem(SAVE_KEY);
-    if (!raw) return null;
-    const data = JSON.parse(raw);
-    if (typeof data.cash !== 'number' || typeof data.missions !== 'number') return null;
-    return data;
-  } catch {
-    return null;
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return blankCareer();
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.v !== 2) return blankCareer();
+    const fresh = blankCareer();
+    const empire = parsed.empire && typeof parsed.empire === 'object' ? parsed.empire : {};
+    const roster = parsed.roster && typeof parsed.roster === 'object' ? parsed.roster : {};
+    const races = parsed.streetRaces && typeof parsed.streetRaces === 'object' ? parsed.streetRaces : {};
+    return {
+      v: 2,
+      cash: typeof parsed.cash === 'number' ? parsed.cash : fresh.cash,
+      respect: typeof parsed.respect === 'number' ? parsed.respect : 0,
+      empire: {
+        owned: empire.owned && typeof empire.owned === 'object' ? empire.owned : {},
+        totalEarned: typeof empire.totalEarned === 'number' ? empire.totalEarned : 0,
+      },
+      roster: {
+        hired: roster.hired && typeof roster.hired === 'object' ? roster.hired : {},
+      },
+      streetRaces: {
+        won: typeof races.won === 'number' ? races.won : 0,
+        best: races.best && typeof races.best === 'object' ? races.best : {},
+      },
+      missionsDone: Array.isArray(parsed.missionsDone) ? parsed.missionsDone : [],
+      garage: parsed.garage && typeof parsed.garage === 'object' ? { ...fresh.garage, ...parsed.garage } : fresh.garage,
+      timePlayed: typeof parsed.timePlayed === 'number' ? parsed.timePlayed : 0,
+    };
+  } catch (err) {
+    return blankCareer();
   }
 }
 
-/** Is there a saved career to continue? */
-export function hasSave() {
-  return loadSave() !== null;
-}
-
-/** Write the current career to localStorage. Returns false when storage fails. */
-export function saveGame(game) {
+export function writeCareer(career) {
   try {
-    const data = {
-      cash: game.player.cash,
-      health: game.player.health,
-      x: game.player.x,
-      y: game.player.y,
-      wanted: 0,
-      missions: game.mission.index,
-      completed: game.mission.completed,
-      packages: game.mission.packagesFound,
-      respect: game.respect,
-      respectByDistrict: game.respectByDistrict,
-      upgrades: game.upgrades,
-      weaponsOwned: game.weaponsOwned,
-      ammo: game.player.ammo,
-      radio: game.radio,
-      raceBest: game.raceBest,
-      // The clock is saved so the day/night cycle continues where it left off.
-      clock: game.clock,
-      // The career's record, so the pause screen remembers the road so far.
-      stats: game.stats,
-      // v5 systems: the empire, the roster and the series, restored on load.
-      empire: serializeEmpire(game.empire),
-      roster: serializeCrew(game.roster),
-      streetRaces: serializeRaces(game.streetRaces),
-      savedAt: Date.now(),
+    const slim = {
+      v: 2,
+      cash: career.cash,
+      respect: career.respect,
+      empire: { owned: career.empire.owned, totalEarned: career.empire.totalEarned || 0 },
+      roster: { hired: career.roster.hired },
+      streetRaces: { won: career.streetRaces.won, best: career.streetRaces.best },
+      missionsDone: career.missionsDone,
+      garage: career.garage,
+      timePlayed: career.timePlayed,
     };
-    window.localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+    localStorage.setItem(SAVE_KEY, JSON.stringify(slim));
     return true;
-  } catch {
+  } catch (err) {
     return false;
   }
 }
 
-/** Drop the saved career (starting a new game does this). */
-export function clearSave() {
+export function eraseCareer() {
   try {
-    window.localStorage.removeItem(SAVE_KEY);
-  } catch {
-    // Storage can be off: nothing to clear.
+    localStorage.removeItem(SAVE_KEY);
+  } catch (err) {
+    // A missing key is already erased.
   }
+  return blankCareer();
 }

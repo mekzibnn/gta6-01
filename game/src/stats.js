@@ -1,149 +1,99 @@
-// Career statistics, v3. The numbers a career leaves behind: how far Leo
-// has driven, how fast, how much he has earned, how many jobs and races
-// he has finished, how many shots found their mark, and how many times
-// the SCPD hauled him in. The pause screen shows them, and the save file
-// keeps them, so a career has a record to look back on.
-//
-// Stats are tracked, never estimated: every counter moves only when the
-// event it counts actually happens in the loop.
-export function createStats() {
+// Career numbers for Solmar Heat (v6 rewrite).
+// The ledger a career leaves behind: how far Leo drove, how long he played,
+// what he earned, how often he got busted, how many races he won. The HUD
+// reads these for the stats screen, and the save file carries them forward.
+
+export function initLedger() {
   return {
     distanceKm: 0,
-    topSpeedKmh: 0,
-    moneyEarned: 0,
-    missionsDone: 0,
+    timePlayed: 0,
+    earned: 0,
+    spent: 0,
+    busted: 0,
     racesWon: 0,
     racesRun: 0,
-    shotsHit: 0,
-    busts: 0,
-    timePlayed: 0,
-    bestRaceSecs: null,
-    businessIncome: 0,
-    seriesWon: 0,
+    missionsDone: 0,
+    businessesBought: 0,
+    crewHired: 0,
+    topSpeed: 0,
   };
 }
 
-/** The career's milestones: marks a player passes on the road. */
-export const MILESTONES = [
-  { id: 'first-km', test: (s) => s.distanceKm >= 1, text: 'First kilometre — the city is yours to learn' },
-  { id: 'ten-km', test: (s) => s.distanceKm >= 10, text: '10 km driven — Road Warrior' },
-  { id: 'first-job', test: (s) => s.missionsDone >= 1, text: 'First job done — Mara trusts you now' },
-  { id: 'five-jobs', test: (s) => s.missionsDone >= 5, text: 'Five jobs done — Solmar regular' },
-  { id: 'first-race', test: (s) => s.racesWon >= 1, text: 'First race won — the flag is yours' },
-  { id: 'first-biz', test: (s) => s.businessIncome >= 100, text: 'First $100 from a business — the empire pays' },
-  { id: 'series-champ', test: (s) => s.seriesWon >= 3, text: 'Three series races won — Solmar\'s fastest' },
-  { id: 'rich', test: (s) => s.moneyEarned >= 10000, text: '$10,000 earned — Solmar pays its debts' },
-  { id: 'speed', test: (s) => s.topSpeedKmh >= 200, text: '200 km/h — the fastest thing in Solmar' },
-];
-
-/** The milestones this career has reached, as one-line texts. */
-export function statsMilestones(stats) {
-  if (!stats) return [];
-  return MILESTONES.filter((m) => m.test(stats)).map((m) => m.text);
+export function ledgerAdd(ledger, key, amount) {
+  if (typeof ledger[key] === 'number') ledger[key] += amount;
+  return ledger;
 }
 
-/** Keep a loaded stats block honest: numbers stay numbers, never NaN. */
-export function sanitizeStats(saved) {
-  const clean = createStats();
-  if (!saved || typeof saved !== 'object') return clean;
-  for (const key of Object.keys(clean)) {
-    const value = saved[key];
-    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
-      clean[key] = value;
-    }
-  }
-  return clean;
+export function ledgerSet(ledger, key, value) {
+  ledger[key] = value;
+  return ledger;
 }
 
-/** Driving: distance in kilometres, and the fastest speed ever reached. */
-export function trackDrive(stats, car, dt) {
-  if (!stats || !car) return;
-  const kmh = Math.abs(car.speed || 0) * 0.36;
-  stats.distanceKm += (kmh * dt) / 3600;
-  if (kmh > stats.topSpeedKmh) stats.topSpeedKmh = Math.round(kmh);
+export function ledgerDrive(ledger, metres, seconds) {
+  ledger.distanceKm += metres / 1000;
+  ledger.timePlayed += seconds;
+  return ledger;
 }
 
-/** Money earned from a fare, a race, or a job — the career's income. */
-export function trackEarn(stats, amount) {
-  if (!stats || !amount) return;
-  stats.moneyEarned += amount;
+export function ledgerEarn(ledger, amount) {
+  ledger.earned += amount;
+  return ledger;
 }
 
-/** Business income: the empire's hourly take, counted apart from jobs. */
-export function trackBusinessIncome(stats, amount) {
-  if (!stats || !amount) return;
-  stats.businessIncome += amount;
+export function ledgerSpend(ledger, amount) {
+  ledger.spent += amount;
+  return ledger;
 }
 
-/** A street series race won (the v5 events, not the old flag race). */
-export function trackSeriesWin(stats) {
-  if (!stats) return;
-  stats.seriesWon += 1;
+export function ledgerBust(ledger) {
+  ledger.busted += 1;
+  return ledger;
 }
 
-/** A story mission finished. */
-export function trackMission(stats) {
-  if (!stats) return;
-  stats.missionsDone += 1;
+export function ledgerRace(ledger, won) {
+  ledger.racesRun += 1;
+  if (won) ledger.racesWon += 1;
+  return ledger;
 }
 
-/** A street race run, won or lost. */
-export function trackRace(stats, won) {
-  if (!stats) return;
-  stats.racesRun += 1;
-  if (won) stats.racesWon += 1;
+export function ledgerMission(ledger) {
+  ledger.missionsDone += 1;
+  return ledger;
 }
 
-/** The fastest race ever run, kept to a tenth of a second. */
-export function trackRaceBest(stats, secs) {
-  if (!stats || !secs) return;
-  if (stats.bestRaceSecs === null || secs < stats.bestRaceSecs) {
-    stats.bestRaceSecs = Math.round(secs * 10) / 10;
-  }
+export function ledgerVenture(ledger) {
+  ledger.businessesBought += 1;
+  return ledger;
 }
 
-/** A shot that found its mark (a ped, a cop, or a car). */
-export function trackHit(stats) {
-  if (!stats) return;
-  stats.shotsHit += 1;
+export function ledgerMate(ledger) {
+  ledger.crewHired += 1;
+  return ledger;
 }
 
-/** Hauled in by the SCPD (or left for dead): the career's black mark. */
-export function trackBust(stats) {
-  if (!stats) return;
-  stats.busts += 1;
+export function ledgerTopSpeed(ledger, kmh) {
+  if (kmh > ledger.topSpeed) ledger.topSpeed = kmh;
+  return ledger;
 }
 
-/** Time on the street, in seconds — the career's own clock. */
-export function trackTime(stats, dt) {
-  if (!stats) return;
-  stats.timePlayed += dt;
+export function ledgerSummary(ledger) {
+  const hours = Math.floor(ledger.timePlayed / 3600);
+  const mins = Math.floor((ledger.timePlayed % 3600) / 60);
+  return {
+    distanceKm: Math.round(ledger.distanceKm * 10) / 10,
+    clock: `${hours}h ${mins}m`,
+    earned: ledger.earned,
+    busted: ledger.busted,
+    racesWon: ledger.racesWon,
+    missionsDone: ledger.missionsDone,
+  };
 }
 
-/** A career in one line, for the pause screen's footer. */
-export function statsLine(stats) {
-  if (!stats) return '';
-  const hours = Math.floor(stats.timePlayed / 3600);
-  const minutes = Math.floor((stats.timePlayed % 3600) / 60);
-  const time = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
-  return `${stats.distanceKm.toFixed(1)} km driven · top ${stats.topSpeedKmh} km/h · $${stats.moneyEarned.toLocaleString('en-US')} earned · ${time} on the street`;
-}
-
-/** The full record, one row per line, for the pause screen. */
-export function statsRows(stats) {
-  if (!stats) return [];
-  const s = stats;
-  return [
-    { label: 'Distance driven', value: `${s.distanceKm.toFixed(1)} km` },
-    { label: 'Top speed', value: `${s.topSpeedKmh} km/h` },
-    { label: 'Money earned', value: `$${s.moneyEarned.toLocaleString('en-US')}` },
-    { label: 'Missions finished', value: `${s.missionsDone} / 12` },
-    { label: 'Street races', value: `${s.racesWon} won / ${s.racesRun} run` },
-    { label: 'Series races won', value: `${s.seriesWon}` },
-    { label: 'Business income', value: `$${s.businessIncome.toLocaleString('en-US')}` },
-    { label: 'Best race time', value: s.bestRaceSecs === null ? '—' : `${s.bestRaceSecs.toFixed(1)}s` },
-    { label: 'Shots on target', value: `${s.shotsHit}` },
-    { label: 'Times busted', value: `${s.busts}` },
-    { label: 'Time on the street', value: `${Math.floor(s.timePlayed / 60)} min` },
-  ];
+export function ledgerFromCareer(ledger, career) {
+  ledger.timePlayed = career.timePlayed || 0;
+  ledger.businessesBought = Object.keys(career.owned || {}).length;
+  ledger.crewHired = Object.keys(career.hired || {}).length;
+  ledger.racesWon = career.won || 0;
+  ledger.missionsDone = (career.missionsDone || []).length;
+  return ledger;
 }

@@ -3,17 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Solmar Heat — Streets of the Sun: an open-world crime game with 12 story missions, a business empire, a recruitable crew, a street race series, a garage upgrade shop with nitro, a day/night cycle, and pedestrians who run from police chases.">
+<meta name="description" content="Solmar Heat — Streets of the Sun: a 3D open-world crime game. Twelve story missions, a business empire to buy, a crew to hire, a street race series, a garage with nitro, a living day/night city, and pedestrians who flee a police chase.">
 <title>Solmar Heat — Streets of the Sun</title>
 <style>
-  /* Full-window game: no scrollbars, dark sea-blue behind the canvas. */
+  /* The game owns the whole window: no scrollbars, deep sea-blue behind it. */
   html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1b26; }
-  /* The 3D view fills the window and keeps the pointer for mouse aiming. */
+  /* The 3D canvas fills the window and holds the pointer for mouse aiming. */
   #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  /* The HUD is a 2D canvas layered over the 3D view. It never takes pointer
-     input, so the game canvas keeps the mouse. */
+  /* The HUD canvas floats over the 3D view. It ignores pointer input, so
+     every click still reaches the game canvas underneath it. */
   #hud { position: fixed; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
-  /* Read aloud, never shown: the status line screen readers announce. */
+  /* Screen-reader status line: read aloud, never shown on screen. */
   #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 </style>
 <script type="importmap">
@@ -21,7 +21,7 @@
 </script>
 </head>
 <body>
-<canvas id="game" aria-label="Solmar Heat: an open-world crime game in 3D. Drive, steal cars, outrun the police, run twelve story missions, buy businesses, hire a crew, race the street series, tune your car at the garage, and survive the night across Solmar City."></canvas>
+<canvas id="game" aria-label="Solmar Heat: a 3D open-world crime game. Drive, steal cars, outrun the police, run twelve story missions, buy businesses, hire a crew, race the street series, tune your car at the garage, and survive the night across Solmar City."></canvas>
 <canvas id="hud" aria-hidden="true"></canvas>
 <p id="status" role="status" aria-live="polite"></p>
 <script type="module" src="./src/main.js"></script>

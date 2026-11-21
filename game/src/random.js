@@ -1,63 +1,56 @@
-// A small seeded random number generator (mulberry32): the same seed gives the
-// same city, traffic and missions, which is what makes the screenshot scenes
-// repeatable. Nothing here reads the clock for gameplay.
-//
-// The generator is a closure over one 32-bit state word. Each call advances
-// the state by the golden-ratio constant, mixes it, and returns a float in
-// [0, 1). The mix is mulberry32 exactly — the sequence for a seed must never
-// change, or the seeded city changes with it.
-export function createRandom(seed) {
-  let state = seed | 0;
-  return function random() {
-    state = (state + 0x6d2b79f5) | 0;
-    let mixed = Math.imul(state ^ (state >>> 15), 1 | state);
-    mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed;
-    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+// Deterministic dice for Solmar Heat (v6 rewrite).
+// One tiny seeded generator drives every random choice in the game, so a
+// given seed always deals the same city, the same traffic and the same
+// weather. The live game seeds it from the clock; the screenshots and the
+// playtest pin it, so their scenes never drift.
+
+export function makeDice(seed) {
+  // Mulberry32: short, fast, and good enough for a game.
+  let a = seed >>> 0;
+  return function next() {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
 
-/** A value in [min, max) from the seeded generator. */
-export function range(random, min, max) {
-  return min + random() * (max - min);
+export function diceRange(dice, low, high) {
+  return low + dice() * (high - low);
 }
 
-/** Pick one element of an array with the seeded generator. */
-export function pick(random, list) {
-  return list[Math.floor(random() * list.length)];
+export function diceInt(dice, low, high) {
+  return Math.floor(diceRange(dice, low, high + 1));
 }
 
-/** True with probability p (0..1) — a seeded coin flip. */
-export function chance(random, p) {
-  return random() < p;
+export function dicePick(dice, list) {
+  return list[Math.floor(dice() * list.length)];
 }
 
-/** True with probability 1 in n — a seeded one-in-n chance. */
-export function oneIn(random, n) {
-  return random() < 1 / n;
+export function diceChance(dice, odds) {
+  return dice() < odds;
 }
 
-/** A whole number in [min, max] (inclusive) from the seeded generator. */
-export function rangeInt(random, min, max) {
-  return min + Math.floor(random() * (max - min + 1));
-}
-
-/** Pick one item, weighted by its `weight` field. */
-export function weightedPick(random, items) {
-  const total = items.reduce((sum, item) => sum + (item.weight || 1), 0);
-  let roll = random() * total;
-  for (const item of items) {
-    roll -= item.weight || 1;
-    if (roll <= 0) return item;
+export function diceShuffle(dice, list) {
+  const out = list.slice();
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(dice() * (i + 1));
+    const tmp = out[i];
+    out[i] = out[j];
+    out[j] = tmp;
   }
-  return items[items.length - 1];
+  return out;
 }
 
-/** Fisher–Yates shuffle of a list, without mutating the original. */
-export function shuffle(random, list) {
-  const arr = list.slice();
-  for (let i = arr.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
+export function diceSign(dice) {
+  return dice() < 0.5 ? -1 : 1;
+}
+
+export function diceSpread(dice, centre, half) {
+  return centre + (dice() * 2 - 1) * half;
+}
+
+export function seedFromClock() {
+  return (Date.now() % 2147483647) | 0;
 }

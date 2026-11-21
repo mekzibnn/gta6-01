@@ -1,187 +1,146 @@
-// Every tuning number and colour in one place. Solmar is a sun-soaked coastal
-// city: warm asphalt, sand, palms and pastel buildings. The world is a fixed
-// 3400x2600 playfield; the camera follows the player and the renderer scales
-// the 1280x720 logical view to the window, so no rule depends on screen size.
+// Solmar Heat — tuning table (v6 rewrite).
+// Every number the game balances on lives here, grouped by system, so a
+// designer can retune the whole game without touching the simulation code.
 
-// -- World & view -----------------------------------------------------------
-export const VIEW = { width: 1280, height: 720 };
-export const WORLD = { width: 3400, height: 2600 };
-export const STEP = 1 / 60;
-
-/** City grid: roads run every BLOCK+ROAD px; blocks hold buildings and parks. */
-export const CITY = {
-  road: 96,
-  block: 304,
-  // South edge is the beach: sand from this y down, sea beyond it.
-  beachY: 2280,
-  seaY: 2460,
-  // Marina district on the west edge, port on the east edge.
-  marinaX: 420,
-  portX: 2980,
-};
-
-// -- Actors -----------------------------------------------------------------
-export const PLAYER = {
-  radius: 13,
-  walkSpeed: 170,
-  runSpeed: 265,
-  health: 100,
-  punchDamage: 12,
-  punchRange: 34,
-  punchArc: 1.1,
-};
-
-export const PED = { count: 46, walkSpeed: 55, fleeSpeed: 150 };
-
-export const TRAFFIC = { count: 22, cruise: 150 };
-
-export const POLICE = {
-  carSight: 560,
-  footSpeed: 185,
-  punchDamage: 8,
-  shootAtStars: 3,
-  bustRadius: 26,
-};
-
-// -- Cars -------------------------------------------------------------------
-export const CAR = {
-  length: 54,
-  width: 26,
-  // accel px/s^2, top speed px/s, grip (steering), brake
-  kinds: {
-    sedan:   { accel: 300, top: 430, grip: 2.6, brake: 520, color: '#c94f43', name: 'Vela Sedan' },
-    taxi:    { accel: 280, top: 400, grip: 2.6, brake: 520, color: '#f2b705', name: 'Solmar Taxi' },
-    sport:   { accel: 430, top: 560, grip: 3.1, brake: 640, color: '#2f7fd0', name: 'Cometa GT' },
-    truck:   { accel: 210, top: 330, grip: 2.0, brake: 420, color: '#7a8a99', name: 'Mulo Truck' },
-    police:  { accel: 380, top: 520, grip: 3.0, brake: 620, color: '#20242c', name: 'SCPD Interceptor' },
-    van:     { accel: 240, top: 360, grip: 2.2, brake: 460, color: '#e8e2d4', name: 'Brisa Van' },
-  },
-};
-
-// -- Wanted & the law -------------------------------------------------------
-export const WANTED = {
-  max: 5,
-  decaySeconds: 14,
-  // police cars chasing per star (plus foot cops at 1-2 stars)
-  chaseCars: [0, 1, 2, 3, 4, 5],
-  sprayCost: 150,
-  ammoCost: 40,
-  healCost: 80,
-};
-
-/** Air One: the SCPD helicopter that joins the chase at 4+ stars. */
-export const HELI = {
-  minStars: 4,
-  hoverHeight: 190,
-  followDist: 260,
-  searchlight: true,
-};
-
-// -- Economy ----------------------------------------------------------------
-export const MISSION_REWARD = [400, 650, 900, 1400, 2500, 1800, 2200, 4000, 3200, 5000, 6000, 7500];
-export const TAXI_FARE = 120;
-export const PACKAGE_BONUS = 100;
-export const HIDDEN_PACKAGES = 10;
-
-// -- Progression ------------------------------------------------------------
-/** Respect: progression that rewards play. Ranks unlock the crew (1500+). */
-export const RESPECT_RANKS = [
-  { at: 0, name: 'Nobody' },
-  { at: 750, name: 'Hustler' },
-  { at: 1500, name: 'Street King' },
-  { at: 3500, name: 'Shot Caller' },
-  { at: 7000, name: 'Solmar Legend' },
-];
-export const RESPECT_MISSION = 120;
-export const RESPECT_RACE = 150;
-export const RESPECT_TAXI = 10;
-export const RESPECT_PACKAGE = 15;
-
-/** Radio: three WebAudio stations, switched with R while driving. */
-export const RADIO = {
-  stations: [
-    { name: 'SOL FM', tag: 'sun-soaked pop' },
-    { name: 'PALM 87', tag: 'coastal chill' },
-    { name: 'HEAT 102', tag: 'night drive bass' },
-  ],
-};
-
-/** Weapons: slots 1-4 (Q cycles). Bought at El Gato Guns. */
-export const WEAPONS = {
-  fists:  { name: 'FISTS',  damage: 12, cooldown: 0.45, ammo: Infinity, cost: 0, auto: false },
-  pistol: { name: 'PISTOL', damage: 34, cooldown: 0.28, ammo: 24, cost: 0, auto: false },
-  smg:    { name: 'SMG',    damage: 18, cooldown: 0.12, ammo: 60, cost: 600, auto: true },
-  shotgun:{ name: 'SHOTGUN',damage: 55, cooldown: 0.85, ammo: 12, cost: 900, auto: false },
-};
-export const WEAPON_ORDER = ['fists', 'pistol', 'smg', 'shotgun'];
-
-/** Garage upgrades at Mara's Garage: engine, armor, paint. */
-export const GARAGE = {
-  engine: [
-    { name: 'Stock engine', cost: 0, top: 1.0, accel: 1.0 },
-    { name: 'Tuned engine', cost: 800, top: 1.15, accel: 1.2 },
-    { name: 'Race engine', cost: 1600, top: 1.3, accel: 1.4 },
-    { name: 'Street King engine', cost: 2600, top: 1.45, accel: 1.6 },
-  ],
-  armor: [
-    { name: 'No armor', cost: 0, resist: 1.0 },
-    { name: 'Plated body', cost: 700, resist: 0.6 },
-    { name: 'Armored hull', cost: 1400, resist: 0.35 },
-    { name: 'Military hull', cost: 2200, resist: 0.2 },
-  ],
-  paints: ['#c94f43', '#2f7fd0', '#f2b705', '#43a85a', '#8a6fbf', '#e8e2d4', '#20242c', '#ff7a3d', '#3ddbd9'],
-};
-
-/** Day/night: the clock's pace and what the night pays. */
-export const DAYNIGHT = {
-  // Game-minutes per real second: a full day takes ~48 minutes of play.
-  timeScale: 0.5,
-  // Night fares pay half as much again (the streets are emptier, the risk higher).
-  nightFareBonus: 0.5,
-  // Heat decays slower after dark: the night holds a wanted level longer.
-  nightDecaySlow: 0.5,
-};
-
-/** Smuggler's Run: each drop pays on the spot and raises the heat by one star. */
-export const SMUGGLE = {
+export const ECONOMY = {
+  // Cash the player starts with on a fresh save.
+  startCash: 5000,
+  // Story mission payouts, in the order the missions run.
+  missionPayout: [400, 650, 900, 1200, 1600, 2100, 2600, 3200, 3800, 4500, 6000, 7500],
+  // A delivery drop inside a mission pays this on top of the mission payout.
   dropBonus: 150,
-  dropHeat: 1,
+  // Chop shop: fraction of a stolen car's value the fence pays.
+  fenceCut: 0.55,
+  // Cash handed to a busted player is lost at this rate.
+  bustFine: 0.25,
 };
 
-/** Street races: 3 checkpoints, timed. Started at the Palm Strip flag. */
-export const RACES = {
-  reward: 500,
-  timeLimit: 150,
-  checkpoints: ['marina', 'portbank', 'hideout'],
+export const VENTURES = {
+  // Buyable businesses: id, display name, buy price, base income per game hour.
+  list: [
+    { id: 'solmar-laundry', label: 'Solmar Laundry', price: 500, hourly: 35, district: 'harbor' },
+    { id: 'palm-wash', label: 'Palm Wash', price: 800, hourly: 60, district: 'marina' },
+    { id: 'sunset-taxi', label: 'Sunset Taxi Co.', price: 1200, hourly: 90, district: 'uptown' },
+    { id: 'neon-palms', label: 'Neon Palms Club', price: 2500, hourly: 180, district: 'downtown', nightBoost: 2, nightFrom: 21, nightTo: 5 },
+  ],
+  // Each level adds this fraction of the base hourly income.
+  levelBonus: 0.25,
+  // Upgrading a business costs this fraction of its buy price, per level.
+  upgradeCost: 0.6,
+  // Income is banked once per game hour, not per frame.
+  tickHours: 1,
 };
 
-/** v5 street series: the new races run gate to gate, and a gate counts
- * when the car passes within this many px of its marker. */
-export const STREET_SERIES = { gateRadius: 90 };
-
-export const SAVE_KEY = 'solmar-heat.save.v2';
-
-// -- Look -------------------------------------------------------------------
-export const PALETTE = {
-  asphalt: '#3d3a38',
-  asphaltLine: '#d8c56a',
-  sidewalk: '#b7a98f',
-  sand: '#e6cf9a',
-  sea: '#1d7fa8',
-  seaDeep: '#14648a',
-  grass: '#5f9e52',
-  grassDark: '#4e8a44',
-  parkPath: '#cbb98d',
-  buildingRoof: '#8a6f5c',
-  text: '#f5efe2',
-  muted: '#c9bda6',
-  hudPanel: 'rgba(12, 20, 28, 0.72)',
-  hudAccent: '#ffb347',
-  star: '#ffd94a',
-  police: '#3d7bfd',
-  mission: '#ffd94a',
-  danger: '#ff5a4e',
+export const MATES = {
+  // Recruitable crew: id, display name, hire price, perk.
+  list: [
+    { id: 'milo', label: 'Milo', role: 'wheelman', price: 900, handling: 1.25 },
+    { id: 'vera', label: 'Vera', role: 'hacker', price: 1100, decay: 1.5 },
+    { id: 'tank', label: 'Tank', role: 'muscle', price: 1000, damage: 1.4 },
+  ],
+  // Having any crew mate active knocks this off garage prices.
+  garageDiscount: 0.1,
 };
 
-export const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
-export const FONT_DISPLAY = '"Trebuchet MS", "Segoe UI", system-ui, sans-serif';
+export const SERIES = {
+  // Street race series: id, display name, entry fee, prize, gate count, par time.
+  list: [
+    { id: 'drag', label: 'Drag', fee: 100, prize: 400, gates: 2, par: 30 },
+    { id: 'sprint', label: 'Sprint', fee: 150, prize: 600, gates: 4, par: 90 },
+    { id: 'circuit', label: 'Circuit', fee: 300, prize: 1200, gates: 6, par: 150 },
+  ],
+  // Finishing over par pays only this fraction of the prize.
+  latePrize: 0.5,
+  // Rain multiplies the prize by this.
+  rainBonus: 1.25,
+  // Gate radius in world units; a car inside it counts as passed.
+  gateRadius: 9,
+};
+
+export const GARAGE = {
+  // Engine tiers: name, price, top-speed multiplier, acceleration multiplier.
+  engines: [
+    { name: 'Stock engine', price: 0, top: 1.0, accel: 1.0 },
+    { name: 'Street engine', price: 800, top: 1.12, accel: 1.15 },
+    { name: 'Race engine', price: 1600, top: 1.28, accel: 1.35 },
+    { name: 'Pro engine', price: 3200, top: 1.5, accel: 1.6 },
+  ],
+  // Armor tiers: name, price, damage reduction.
+  armor: [
+    { name: 'No armor', price: 0, soak: 0 },
+    { name: 'Light armor', price: 900, soak: 0.25 },
+    { name: 'Heavy armor', price: 2000, soak: 0.5 },
+  ],
+  // Nitro: price per charge, top-speed boost while burning.
+  nitroPrice: 350,
+  nitroBoost: 1.35,
+  nitroSeconds: 4,
+};
+
+export const HEAT = {
+  // Wanted stars, 0-5. Decay: one star per this many quiet seconds.
+  maxStars: 5,
+  decaySeconds: 22,
+  // A mission drop raises the heat by this many stars.
+  dropRaise: 1,
+  // Cop spawn distance and chase top speed scale with stars.
+  copBase: 2,
+  copPerStar: 1,
+};
+
+export const RESPECT = {
+  // Respect tiers: name, points needed, label shown in the HUD.
+  tiers: [
+    { name: 'Nobody', points: 0 },
+    { name: 'Hustler', points: 400 },
+    { name: 'Shot Caller', points: 1600 },
+    { name: 'Street King', points: 3500 },
+  ],
+  // Points per completed mission, per race won, per business bought.
+  perMission: 120,
+  perRace: 90,
+  perBusiness: 150,
+};
+
+export const WORLD = {
+  // City footprint in world units; the playable grid sits inside it.
+  halfSize: 340,
+  block: 44,
+  roadWidth: 12,
+  // How many pedestrians walk the sidewalks at once.
+  pedCount: 64,
+  // Day length in real seconds; the clock wraps at 24h.
+  daySeconds: 480,
+  // The sun sets and the lamps come on at this hour.
+  duskHour: 18,
+  dawnHour: 6,
+};
+
+export const LOOK = {
+  // Sky and light: golden hour, noon, night.
+  skyNoon: 0x8ec9e8,
+  skyGolden: 0xf7b267,
+  skyNight: 0x0d1b26,
+  fogGolden: 0xf2c184,
+  fogNight: 0x0a141d,
+  // Building palette: warm low-poly blocks.
+  buildingColors: [0xe2725b, 0x4f9d8f, 0xe8b04b, 0x7a6ff0, 0xc65d7b, 0x5b8c5a, 0xef8354, 0x2a9d8f],
+  roadColor: 0x23282e,
+  sidewalkColor: 0x8a8f98,
+  // The player's car and the heli.
+  playerPaint: 0xff5a3c,
+  heliPaint: 0x1f2a37,
+  // Race gate ring colour and business marker colour.
+  gateColor: 0xffffff,
+  ventureColor: 0xffd23f,
+};
+
+export const WEAPONS = {
+  // Weapon slots: name, damage, ammo, price.
+  slots: [
+    { name: 'Fists', damage: 12, ammo: Infinity, price: 0 },
+    { name: 'Pistol', damage: 22, ammo: 18, price: 400 },
+    { name: 'SMG', damage: 16, ammo: 60, price: 900 },
+    { name: 'Shotgun', damage: 45, ammo: 8, price: 1400 },
+  ],
+};

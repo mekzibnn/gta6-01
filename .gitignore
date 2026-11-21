@@ -1,14 +1,9 @@
-# Solmar Heat (gta 06 v5) — files the entry never ships. Keep this list
-# tight: only generated output, local tooling, and OS/editor litter.
-# Build output: the dossier generator writes here (out/dossier.json).
+# Solmar Heat (gta 06 v6) — files the entry never ships. Keep this list
+# short: everything the game needs to run is committed, everything else
+# (build output, local tooling, editor state) stays out.
 out/
-# Dependencies, if any are ever installed locally.
 node_modules/
-# Local run logs (serve.ts / tooling), never part of the entry.
-*.log
-# macOS Finder litter and editor scratch files.
 .DS_Store
-*.tmp
-*.swp
-# Screenshots taken by hand during playtesting (not the four shipped ones).
-screenshots/local-*.jpg
+*.log
+coverage/
+.playwright/
