@@ -10,6 +10,9 @@
 // shop costs or does — the registry only changes how the choice is made.
 import { WEAPONS, WANTED } from './config.js';
 import { startRace, startTaxi } from './missions.js';
+import { buyVenture, ventureOwned, ventureById } from './empire.js';
+import { hireMate, crewCheapestAvailable } from './crew.js';
+import { startRace as startStreetRace, nextRaceCard } from './races.js';
 
 /** One shop: where it is, which seat it serves, its promise, its deed. */
 const SHOP_DEFS = [
@@ -131,6 +134,161 @@ const SHOP_DEFS = [
       const dest = startTaxi(game.mission, game.player, game.city, game.random);
       ctx.toast(game, `Fare to ${dest.label} — 90 seconds`, 2.5);
       game.audio.blip();
+    },
+  },
+  {
+    id: 'biz-taxi',
+    place: 'taxioffice',
+    radius: 110,
+    modes: ['foot', 'car'],
+    prompt(game) {
+      const spec = ventureById('sunset-taxi');
+      if (ventureOwned(game.empire, 'sunset-taxi')) return 'Sunset Taxi Co. — yours, $90/hr';
+      return `Sunset Taxi Co. — buy the business $${spec.price}`;
+    },
+    blurb: 'A cab fleet that pays every hour, even while you sleep.',
+    action(game, ctx) {
+      const player = game.player;
+      const result = buyVenture(game.empire, 'sunset-taxi', player.cash);
+      if (result.ok) {
+        player.cash = result.cash;
+        game.audio.deal();
+        ctx.toast(game, 'Sunset Taxi Co. is yours — it pays $90 an hour', 3, '#7dff8a');
+      } else if (result.reason === 'already-owned') {
+        ctx.toast(game, 'You already own Sunset Taxi Co.', 2);
+      } else {
+        ctx.toast(game, 'Sunset Taxi Co. costs $1200', 2);
+      }
+    },
+  },
+  {
+    id: 'biz-laundry',
+    place: 'laundry',
+    radius: 110,
+    modes: ['foot', 'car'],
+    prompt(game) {
+      const spec = ventureById('solmar-laundry');
+      if (ventureOwned(game.empire, 'solmar-laundry')) return 'Solmar Laundry — yours, $35/hr';
+      return `Solmar Laundry — buy the business $${spec.price}`;
+    },
+    blurb: 'Washers humming next to the market; small money, steady money.',
+    action(game, ctx) {
+      const player = game.player;
+      const result = buyVenture(game.empire, 'solmar-laundry', player.cash);
+      if (result.ok) {
+        player.cash = result.cash;
+        game.audio.deal();
+        ctx.toast(game, 'Solmar Laundry is yours — it pays $35 an hour', 3, '#7dff8a');
+      } else if (result.reason === 'already-owned') {
+        ctx.toast(game, 'You already own Solmar Laundry.', 2);
+      } else {
+        ctx.toast(game, 'Solmar Laundry costs $500', 2);
+      }
+    },
+  },
+  {
+    id: 'biz-club',
+    place: 'club',
+    radius: 110,
+    modes: ['foot', 'car'],
+    prompt(game) {
+      const spec = ventureById('neon-palms');
+      if (ventureOwned(game.empire, 'neon-palms')) return 'Neon Palms Club — yours, $180/hr';
+      return `Neon Palms Club — buy the business $${spec.price}`;
+    },
+    blurb: 'The basement club under the neon sign; it doubles after dark.',
+    action(game, ctx) {
+      const player = game.player;
+      const result = buyVenture(game.empire, 'neon-palms', player.cash);
+      if (result.ok) {
+        player.cash = result.cash;
+        game.audio.deal();
+        ctx.toast(game, 'Neon Palms Club is yours — it pays $180 an hour', 3, '#7dff8a');
+      } else if (result.reason === 'already-owned') {
+        ctx.toast(game, 'You already own Neon Palms Club.', 2);
+      } else {
+        ctx.toast(game, 'Neon Palms Club costs $2500', 2);
+      }
+    },
+  },
+  {
+    id: 'biz-wash',
+    place: 'wash',
+    radius: 110,
+    modes: ['foot', 'car'],
+    prompt(game) {
+      const spec = ventureById('palm-wash');
+      if (ventureOwned(game.empire, 'palm-wash')) return 'Palm Wash — yours, $60/hr';
+      return `Palm Wash — buy the business $${spec.price}`;
+    },
+    blurb: 'A drive-through wash off Palm Strip, always a queue.',
+    action(game, ctx) {
+      const player = game.player;
+      const result = buyVenture(game.empire, 'palm-wash', player.cash);
+      if (result.ok) {
+        player.cash = result.cash;
+        game.audio.deal();
+        ctx.toast(game, 'Palm Wash is yours — it pays $60 an hour', 3, '#7dff8a');
+      } else if (result.reason === 'already-owned') {
+        ctx.toast(game, 'You already own Palm Wash.', 2);
+      } else {
+        ctx.toast(game, 'Palm Wash costs $800', 2);
+      }
+    },
+  },
+  {
+    id: 'crewbar',
+    place: 'crewbar',
+    radius: 110,
+    modes: ['foot'],
+    prompt(game) {
+      const next = crewCheapestAvailable(game.roster, game.player.cash);
+      if (!next) return 'The Overpass Bar — the crew is full';
+      return `The Overpass Bar — hire ${next.name} ($${next.cost})`;
+    },
+    blurb: 'Specialists drink here. Hire the cheapest one on the spot.',
+    action(game, ctx) {
+      const player = game.player;
+      const next = crewCheapestAvailable(game.roster, player.cash);
+      if (!next) {
+        ctx.toast(game, 'The crew is full — everyone is hired', 2);
+        return;
+      }
+      const result = hireMate(game.roster, next.id, player.cash);
+      if (result.ok) {
+        player.cash = result.cash;
+        game.audio.deal();
+        ctx.toast(game, `${next.name} joined the crew — ${next.perkLabel}`, 3, '#7dff8a');
+      } else {
+        ctx.toast(game, `${next.name} costs $${next.cost}`, 2);
+      }
+    },
+  },
+  {
+    id: 'dragstrip',
+    place: 'dragstrip',
+    radius: 110,
+    modes: ['car'],
+    prompt(game) {
+      if (game.streetRaces && game.streetRaces.running) return 'Street series — race in progress';
+      const card = nextRaceCard(game.streetRaces);
+      return `Portside Drag Strip — ${card.name}, entry $${card.fee}`;
+    },
+    blurb: 'The street series: three events, gates in order, prize at the flag.',
+    action(game, ctx) {
+      if (game.streetRaces && game.streetRaces.running) return;
+      const card = nextRaceCard(game.streetRaces);
+      const result = startStreetRace(game.streetRaces, card.id, game.player.cash);
+      if (result.ok) {
+        game.player.cash = result.cash;
+        // The clock for the race is game time, not wall time, so the
+        // series stays deterministic across seeds and replays.
+        game.streetRaces.running.startedAt = game.time;
+        game.audio.blip();
+        ctx.toast(game, `${card.name} — ${card.gates} gates, first gate ahead!`, 3, '#ffd94a');
+      } else {
+        ctx.toast(game, `${card.name} entry is $${card.fee}`, 2);
+      }
     },
   },
 ];

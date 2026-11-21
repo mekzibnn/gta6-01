@@ -63,7 +63,7 @@ export function stepPlayerOnFoot(player, axes, dt, city, aimAngle, firing, peds,
 }
 
 /** A punch: hurt peds and cops in front of the player. Returns hits. */
-export function punch(player, peds, cops, audio) {
+export function punch(player, peds, cops, audio, damageMult = 1) {
   if (player.punchCooldown > 0) return 0;
   player.punchCooldown = 0.45;
   let hits = 0;
@@ -74,7 +74,7 @@ export function punch(player, peds, cops, audio) {
     if (d > PLAYER.punchRange + 12) return;
     const ang = Math.atan2(dy, dx);
     if (Math.abs(angleDiff(ang, player.angle)) < PLAYER.punchArc) {
-      target.health = (target.health ?? 50) - PLAYER.punchDamage;
+      target.health = (target.health ?? 50) - PLAYER.punchDamage * damageMult;
       target.flee = 2.5;
       target.hitFlash = 0.3;
       hits += 1;
@@ -88,7 +88,7 @@ export function punch(player, peds, cops, audio) {
 
 /** A shot from the current weapon: pistol, SMG (fast) or shotgun (spread).
  * Returns the first thing hit (shotgun: the nearest of up to three), if any. */
-export function shoot(player, aimAngle, peds, cops, cars, audio) {
+export function shoot(player, aimAngle, peds, cops, cars, audio, damageMult = 1) {
   const spec = WEAPONS[player.weapon];
   if (!spec || player.weapon === 'fists') return null;
   if ((player.ammo[player.weapon] || 0) <= 0 || player.shootCooldown > 0) return null;
@@ -113,7 +113,7 @@ export function shoot(player, aimAngle, peds, cops, cars, audio) {
   const take = player.weapon === 'shotgun' ? hits.slice(0, 3) : hits.slice(0, 1);
   for (const hit of take) {
     if (hit.kind === 'ped' || hit.kind === 'cop') {
-      hit.target.health = (hit.target.health ?? 50) - spec.damage;
+      hit.target.health = (hit.target.health ?? 50) - spec.damage * damageMult;
       hit.target.flee = 3;
       hit.target.hitFlash = 0.3;
     } else if (hit.kind === 'car') {

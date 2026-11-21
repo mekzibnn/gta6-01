@@ -1,4 +1,4 @@
-# Solmar Heat (gta 06 v3) — files the entry never ships. Keep this list
+# Solmar Heat (gta 06 v5) — files the entry never ships. Keep this list
 # tight: only generated output, local tooling, and OS/editor litter.
 # Build output: the dossier generator writes here (out/dossier.json).
 out/
@@ -10,3 +10,5 @@ node_modules/
 .DS_Store
 *.tmp
 *.swp
+# Screenshots taken by hand during playtesting (not the four shipped ones).
+screenshots/local-*.jpg

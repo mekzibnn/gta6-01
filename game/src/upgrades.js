@@ -1,6 +1,7 @@
 // its catalogue, its prices, and what each tier does to a car, so the
 // physics (vehicles.js) and the save file (save.js) never hard-code a tier.
 import { GARAGE, WANTED } from './config.js';
+import { crewHiredCount } from './crew.js';
 
 /** Nitro: a purchasable burst. One charge, one hard push. */
 export const NITRO = {
@@ -44,6 +45,13 @@ export function activePerks(upgrades) {
 /** Race winnings multiplier from the engine perk (1.1 with a Street King). */
 export function raceRewardMultiplier(upgrades) {
   return (upgrades && upgrades.engine >= 3) ? 1.1 : 1;
+}
+
+/** The garage crew rate: a hired crew mate gets the garage to knock 10%
+ * off a tier, because the shop knows a regular when it sees one. */
+export function crewDiscount(game) {
+  if (!game || !game.roster) return 1;
+  return crewHiredCount(game.roster) > 0 ? 0.9 : 1;
 }
 
 /** Cash lost on a bust: halved by the Military hull perk. */
@@ -172,10 +180,11 @@ export function buyUpgrade(game, kind) {
     return { ok: false, message: `${kind === 'engine' ? 'Engine' : 'Armor'} is maxed out` };
   }
   const tier = list[level + 1];
-  if (player.cash < tier.cost) return { ok: false, message: `${tier.name} costs $${tier.cost}` };
-  player.cash -= tier.cost;
+  const cost = Math.round(tier.cost * crewDiscount(game));
+  if (player.cash < cost) return { ok: false, message: `${tier.name} costs $${cost}` };
+  player.cash -= cost;
   upgrades[kind] = level + 1;
-  return { ok: true, message: `${tier.name} installed`, sound: 'coin' };
+  return { ok: true, message: `${tier.name} installed${cost < tier.cost ? ' — crew rate applied' : ''}`, sound: 'coin' };
 }
 
 /**

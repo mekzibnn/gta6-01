@@ -218,6 +218,8 @@ export function createAudio() {
     stationName() { return STATIONS[station].name; },
     blip() { playTone(880, 0.12, 'sine', 0.18, 1320); },
     coin() { playTone(660, 0.1, 'square', 0.12); setTimeout(() => playTone(990, 0.14, 'square', 0.12), 70); },
+    /** The till ringing: a two-note chime for buying a business or hiring crew. */
+    deal() { playTone(784, 0.12, 'triangle', 0.18); setTimeout(() => playTone(1047, 0.2, 'triangle', 0.18), 90); },
     punch() { playNoise(0.08, 0.25, 900); },
     shoot() { playNoise(0.14, 0.4, 2400); playTone(180, 0.1, 'square', 0.15, 60); },
     crash() { playNoise(0.3, 0.5, 500); playTone(90, 0.25, 'sine', 0.3, 40); },

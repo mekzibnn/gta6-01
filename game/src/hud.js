@@ -10,6 +10,9 @@ import { VIEW, PALETTE, FONT, FONT_DISPLAY, WORLD, CITY, RESPECT_RANKS, WEAPONS,
 import { shopRows, upgradeSummary, sellValue } from './upgrades.js';
 import { dayNightLine } from './daynight.js';
 import { weatherLine } from './weather.js';
+import { empireHourlyTake } from './empire.js';
+import { crewHiredNames } from './crew.js';
+import { raceById } from './races.js';
 
 /** A translucent rounded panel, the HUD's one shared surface. */
 function drawPanel(ctx, x, y, w, h, fill) {
@@ -207,6 +210,45 @@ const upgradesWidget = {
   },
 };
 
+/** The v5 strip: businesses owned and their hourly take, the hired crew,
+ * and the live street-series clock. It sits above the crew bar (-190) and
+ * only shows once Leo owns, hires or races anything. */
+const empireWidget = {
+  id: 'empire',
+  visible(game) {
+    const hasBiz = game.empire && Object.keys(game.empire.owned || {}).length > 0;
+    const hasCrew = game.roster && Object.keys(game.roster.hired || {}).length > 0;
+    const racing = !!(game.streetRaces && game.streetRaces.running);
+    return !!(hasBiz || hasCrew || racing);
+  },
+  paint(ctx, game) {
+    const y = VIEW.height - 190;
+    drawPanel(ctx, 16, y, 420, 34);
+    ctx.fillStyle = '#7dff8a';
+    ctx.font = `700 12px ${FONT_DISPLAY}`;
+    ctx.textAlign = 'left';
+    const parts = [];
+    if (game.empire) {
+      const count = Object.keys(game.empire.owned || {}).length;
+      if (count > 0) {
+        const hourly = empireHourlyTake(game.empire, Math.floor(game.clock / 60) % 24);
+        parts.push(`EMPIRE ${count} · $${hourly}/hr`);
+      }
+    }
+    if (game.roster) {
+      const names = crewHiredNames(game.roster);
+      if (names.length > 0) parts.push(`CREW ${names.join(' · ').toUpperCase()}`);
+    }
+    if (game.streetRaces && game.streetRaces.running) {
+      const run = game.streetRaces.running;
+      const card = raceById(run.raceId);
+      const secs = Math.max(0, game.time - run.startedAt);
+      parts.push(`${card.name.toUpperCase()} ${run.gate}/${card.gates} · ${secs.toFixed(1)}s`);
+    }
+    ctx.fillText(parts.join('   '), 30, y + 22);
+  },
+};
+
 const radioWidget = {
   id: 'radio',
   paint(ctx, game) {
@@ -377,6 +419,12 @@ const minimapWidget = {
     dot(city.places.gunshop, '#c9c9c9', 4);
     dot(city.places.clinic, '#ffffff', 4);
     dot(city.places.race, '#ffd94a', 4);
+    // v5 storefronts in green, the drag strip in orange.
+    dot(city.places.taxioffice, '#7dff8a', 4);
+    dot(city.places.laundry, '#7dff8a', 4);
+    dot(city.places.club, '#7dff8a', 4);
+    dot(city.places.wash, '#7dff8a', 4);
+    dot(city.places.dragstrip, '#ff7a3d', 4);
     const step = mission.active && game.missionTarget ? game.missionTarget : null;
     if (step) {
       const pulse = 5 + Math.sin(game.time * 5) * 2;
@@ -415,6 +463,13 @@ const minimapWidget = {
         dot(city.places[RACES.checkpoints[i]], '#ffffff', 3);
       }
     }
+    if (game.streetRaces && game.streetRaces.running) {
+      const run = game.streetRaces.running;
+      const card = raceById(run.raceId);
+      for (let i = run.gate; i < card.gates; i += 1) {
+        dot(city.places[`gate${i + 1}`], '#ffffff', 3);
+      }
+    }
     ctx.save();
     ctx.translate(x0 + player.x * scale, y0 + player.y * scale);
     ctx.rotate(player.angle + Math.PI / 2);
@@ -432,7 +487,7 @@ const minimapWidget = {
 /** The registry, in paint order: top bar, then bottom bar, then overlays. */
 const WIDGETS = [
   cashWidget, respectWidget, wantedWidget, objectiveWidget, timersWidget,
-  crewWidget, upgradesWidget, weaponsWidget, radioWidget, speedWidget,
+  crewWidget, upgradesWidget, empireWidget, weaponsWidget, radioWidget, speedWidget,
   dayNightWidget, toastWidget, garageWidget, minimapWidget,
 ];
 

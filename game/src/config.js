@@ -78,7 +78,7 @@ export const HELI = {
 };
 
 // -- Economy ----------------------------------------------------------------
-export const MISSION_REWARD = [400, 650, 900, 1400, 2500, 1800, 2200, 4000, 3200, 5000];
+export const MISSION_REWARD = [400, 650, 900, 1400, 2500, 1800, 2200, 4000, 3200, 5000, 6000, 7500];
 export const TAXI_FARE = 120;
 export const PACKAGE_BONUS = 100;
 export const HIDDEN_PACKAGES = 10;
@@ -154,6 +154,10 @@ export const RACES = {
   timeLimit: 150,
   checkpoints: ['marina', 'portbank', 'hideout'],
 };
+
+/** v5 street series: the new races run gate to gate, and a gate counts
+ * when the car passes within this many px of its marker. */
+export const STREET_SERIES = { gateRadius: 90 };
 
 export const SAVE_KEY = 'solmar-heat.save.v2';
 

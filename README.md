@@ -10,8 +10,14 @@ cars, story, art, sound and music.
 
 You are Leo Marin, a courier pulled into fixer Mara's jobs across a
 sun-soaked coastal city. Drive and steal cars, outrun the SCPD wanted
-system, run ten story missions, pick up taxi fares, and find ten hidden
+system, run twelve story missions, pick up taxi fares, and find ten hidden
 packages — on foot and behind the wheel.
+
+v5 adds a business empire (buy four storefronts — Sunset Taxi Co., Palm
+Wash, Neon Palms Club, Solmar Laundry — and they pay every game hour), a
+recruitable crew (Milo the wheelman, Vera the hacker, Tank the muscle), a
+street race series (Sprint, Circuit and Drag, with best times and a rain
+bonus), and two new jobs: Empire Rising and Crew Up.
 
 v3 adds a garage upgrade shop (engines, armor, paint, nitro boosts bought
 with cash and saved), a day/night cycle (streetlamps and headlights after
@@ -33,7 +39,8 @@ request, no build step. The city renders in full 3D (three.js, vendored in
 - **F** — punch · **Q** — cycle weapons · **1–4** — weapon slots (buy guns
   at El Gato Guns) · **mouse** — aim, click to shoot
 - **N** — nitro boost (stock charges at the garage, slot 4) · **R** — change
-  radio station · **C** — chase / high camera
+  radio station · **C** — chase / high camera · **X** — abandon a street
+  race in progress (the entry fee stays with the flag)
 - In the garage (keys 1–5): engine, armor, paint, nitro, or sell the car to
   the chop shop · **P / Esc** — pause · **M** — mute
 
@@ -50,8 +57,9 @@ Progress saves to localStorage on mission complete and on pause.
 - A 0–5 star wanted system with police cars that chase and ram, foot cops
   that chase, punch and (at 3+ stars) shoot, and the Air One helicopter
   circling overhead at 4+ stars
-- Eight story missions — including a street race, an Air One survival job
-  and a five-star finale — plus taxi fares, street races and hidden packages
+- Twelve story missions — including a street race, an Air One survival job
+  and a five-star finale — plus taxi fares, street races, a business empire,
+  a recruitable crew and hidden packages
 - Respect ranks (Nobody → Solmar Legend) tracked per district, and a crew:
   Dante and Rosa join once Leo earns Street King respect and fight beside him
 - A radio with three stations (SOL FM, PALM 87, HEAT 102), a garage with

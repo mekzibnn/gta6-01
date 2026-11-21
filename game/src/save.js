@@ -1,6 +1,9 @@
 // Saving: progress lives in localStorage so a player can continue a career.
 // Only plain numbers and ids are stored, never anything personal.
 import { SAVE_KEY } from './config.js';
+import { serializeEmpire } from './empire.js';
+import { serializeCrew } from './crew.js';
+import { serializeRaces } from './races.js';
 
 /** Read the saved career, or null when there is none (or it is corrupt). */
 export function loadSave() {
@@ -43,6 +46,10 @@ export function saveGame(game) {
       clock: game.clock,
       // The career's record, so the pause screen remembers the road so far.
       stats: game.stats,
+      // v5 systems: the empire, the roster and the series, restored on load.
+      empire: serializeEmpire(game.empire),
+      roster: serializeCrew(game.roster),
+      streetRaces: serializeRaces(game.streetRaces),
       savedAt: Date.now(),
     };
     window.localStorage.setItem(SAVE_KEY, JSON.stringify(data));

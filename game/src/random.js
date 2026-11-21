@@ -31,6 +31,11 @@ export function chance(random, p) {
   return random() < p;
 }
 
+/** True with probability 1 in n — a seeded one-in-n chance. */
+export function oneIn(random, n) {
+  return random() < 1 / n;
+}
+
 /** A whole number in [min, max] (inclusive) from the seeded generator. */
 export function rangeInt(random, min, max) {
   return min + Math.floor(random() * (max - min + 1));

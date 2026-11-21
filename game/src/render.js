@@ -10,6 +10,7 @@ import { moonAngleFor } from './daynight.js';
 import { weatherFogFar, weatherDarkness, weatherRain } from './weather.js';
 import { statsRows, statsMilestones } from './stats.js';
 import { bustedPenalty } from './upgrades.js';
+import { raceRunning, RACE_GATE_KEYS } from './races.js';
 
 export const SCREEN_TITLE = 'title';
 export const SCREEN_PLAY = 'play';
@@ -700,6 +701,16 @@ export function createRenderer(gameCanvas, hudCanvas) {
       dyn.ring.visible = false;
       scene.add(dyn.ring);
     }
+    // Street series gate ring: a white circle on the ground at the next gate.
+    if (!dyn.gateRing) {
+      dyn.gateRing = new THREE.Mesh(
+        new THREE.RingGeometry(70, 90, 32),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false }),
+      );
+      dyn.gateRing.rotation.x = -Math.PI / 2;
+      dyn.gateRing.visible = false;
+      scene.add(dyn.gateRing);
+    }
   }
 
   // -- syncDynamic, split by what moves -------------------------------------
@@ -850,6 +861,20 @@ export function createRenderer(gameCanvas, hudCanvas) {
     } else if (dyn.beam) {
       dyn.beam.visible = false;
       dyn.ring.visible = false;
+    }
+    // Street series gate: a white ring on the ground at the next gate.
+    if (dyn.gateRing) {
+      const run = game.streetRaces ? raceRunning(game.streetRaces) : null;
+      const key = run ? RACE_GATE_KEYS[run.gate] : null;
+      const place = key && game.city && game.city.places ? game.city.places[key] : null;
+      if (place) {
+        dyn.gateRing.visible = true;
+        dyn.gateRing.position.set(place.x, 1.5, place.y);
+        const s = 1 + Math.sin(game.time * 5) * 0.15;
+        dyn.gateRing.scale.set(s, s, s);
+      } else {
+        dyn.gateRing.visible = false;
+      }
     }
   }
 

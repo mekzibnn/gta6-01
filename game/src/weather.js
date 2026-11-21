@@ -75,6 +75,12 @@ export function weatherRain(weather) {
   return weatherSpec(weather.kind).rain;
 }
 
+/** The rain bonus for the street series: a wet race pays a quarter more,
+ * for the driver willing to run the gates in the rain. */
+export function raceRainBonus(weather) {
+  return weather && weather.kind === 'rain' ? 1.25 : 1;
+}
+
 /** How far the fog reaches under this sky, in world units. */
 export function weatherFogFar(weather) {
   return weatherSpec(weather.kind).fogFar;

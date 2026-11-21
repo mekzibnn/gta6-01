@@ -8,13 +8,14 @@
 // stages the same crowds — the screenshots stay repeatable.
 import { roadLines, groundAt, resolveCircle } from './city.js';
 import { PED, WORLD } from './config.js';
-import { pick, range } from './random.js';
+import { pick, range, oneIn } from './random.js';
 
 /** Who walks Solmar: pace and how long they linger at a waypoint. */
 export const PED_ROLES = {
   commuter: { speed: 1.0, pause: 0, weight: 6 },
   jogger: { speed: 1.7, pause: 0, weight: 2.5 },
   tourist: { speed: 0.55, pause: 2.5, weight: 1.5 },
+  shopper: { speed: 0.45, pause: 4, weight: 1 },
 };
 
 /** How far panic spreads, and how close a car must be to make a ped dodge. */
@@ -219,6 +220,16 @@ function stepMind(ped, game, dt, danger) {
       // A partner walks in lockstep: same waypoint, same turn.
       if (ped.partner && ped.partner.health > 0) ped.partner.routeIndex = ped.routeIndex;
       if (ped.rolePause > 0) ped.pauseTimer = ped.rolePause * (0.5 + random() * 0.8);
+      // A shopper who reaches a storefront often stops to look in the window.
+      if (ped.role === 'shopper' && oneIn(random, 2)) {
+        for (const key of ['taxioffice', 'laundry', 'club', 'wash']) {
+          const shop = game.city.places[key];
+          if (shop && Math.hypot(ped.x - shop.x, ped.y - shop.y) < 150) {
+            ped.pauseTimer = Math.max(ped.pauseTimer, 4);
+            break;
+          }
+        }
+      }
       return;
     }
     const dir = angleTo(ped.x, ped.y, tx, ty);
@@ -301,7 +312,7 @@ export function stepPeds(game, dt) {
 
 /** How many peds are out on each role, for the dossier and the HUD. */
 export function pedRoleCounts(game) {
-  const counts = { commuter: 0, jogger: 0, tourist: 0, unassigned: 0 };
+  const counts = { commuter: 0, jogger: 0, tourist: 0, shopper: 0, unassigned: 0 };
   for (const ped of game.peds) {
     if (ped.health <= 0) continue;
     if (ped.role && counts[ped.role] !== undefined) counts[ped.role] += 1;

@@ -6,7 +6,7 @@
 // drawn by hand.
 import { STEP, WORLD } from './config.js';
 import { stepDrivenCar, stepTrafficCar, stepPoliceCar, createCar, createHelicopter, stepHelicopter } from './vehicles.js';
-import { createCrewMember } from './actors.js';
+import { buyVenture } from './empire.js';
 import { stepPeds } from './peds.js';
 import { startMission } from './missions.js';
 
@@ -95,8 +95,9 @@ function addPoliceAhead(game, dist = 300, lateral = 120) {
 
 /**
  * Set `game` to the named scene and return the screen to draw over it.
- * Names: cover (police chase), drive (golden-hour cruise), mission (marina
- * pickup on foot), night (downtown after dark). Any other name is cover.
+ * Names: cover (police chase), drive (golden-hour cruise), mission
+ * (Empire Rising at the taxi office, on foot), night (downtown after dark).
+ * Any other name is cover.
  */
 export function stageShot(name, game) {
   const scene = name || 'cover';
@@ -152,28 +153,26 @@ export function stageShot(name, game) {
     return { screen: 'play' };
   }
   if (scene === 'mission') {
-    // On foot at Portside Bank, Smuggler's Run (mission 9) live: the first
-    // drop is a pickup here, and the crew is beside Leo. Facing the bank
-    // puts the landmark and the objective marker in the frame.
+    // On foot at Sunset Taxi Co., Empire Rising (mission 11) live: the taxi
+    // office is already Leo's, so the empire widget shows in the HUD, and
+    // the next step is the laundry drop. Facing the office puts the
+    // storefront and the objective marker in the frame.
     game.player.onFoot = true;
     game.player.car = null;
-    game.player.x = game.city.places.portbank.x - 60;
-    game.player.y = game.city.places.portbank.y + 40;
+    game.player.x = game.city.places.taxioffice.x - 60;
+    game.player.y = game.city.places.taxioffice.y + 40;
     game.player.angle = 0;
-    game.player.cash = 1250;
+    game.player.cash = 2400;
     game.player.health = 92;
     game.clock = 11 * 60 + 20;
     game.respect = 800;
     setRadio(game, 0);
     game.shotCam = { dist: 160, height: 130, fov: 60 };
-    game.crew = [
-      createCrewMember('Dante', game.player.x - 50, game.player.y + 40, '#e8b98a', '#e74c3c'),
-      createCrewMember('Rosa', game.player.x + 40, game.player.y - 60, '#f1c27d', '#2ecc71'),
-    ];
-    game.mission.index = 8;
+    game.player.cash = buyVenture(game.empire, 'sunset-taxi', game.player.cash).cash;
+    game.mission.index = 10;
     startMission(game.mission, null);
-    game.missionTarget = game.city.places.portbank;
-    game.objectiveText = 'Smuggler\'s Run — pick up the package at Portside Bank';
+    game.missionTarget = game.city.places.taxioffice;
+    game.objectiveText = 'Empire Rising — your taxi office pays $90 an hour';
     autopilotDrive(game, 0.5);
     return { screen: 'play' };
   }

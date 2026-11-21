@@ -19,6 +19,13 @@
 // widget-registry HUD (game/src/hud.js). The program itself is still
 // unchanged: copy game/ and screenshots/, write the dossier.
 //
+// v5: twelve story missions (Empire Rising and Crew Up join the ten), a
+// business empire (game/src/empire.js), a recruitable crew (game/src/crew.js)
+// and a street race series (game/src/races.js), with the empire income, the
+// crew perks and the race gates wired into the loop, the save file and the
+// HUD. The program itself is still unchanged: copy game/ and screenshots/,
+// write the dossier.
+//
 // Serve it locally with `node serve.ts`, then open http://localhost:8080.
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts

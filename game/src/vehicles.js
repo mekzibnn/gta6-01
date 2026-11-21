@@ -151,8 +151,9 @@ export function spawnTrafficCar(random) {
 /** One physics step for a driven car. Returns 'crash' when it hits something hard.
  * `upgrades` is the garage state ({engine, armor, paint, nitro}); the
  * multipliers come from the shop catalogue, and a burning nitro charge
- * lifts the top speed while it lasts. */
-export function stepDrivenCar(car, input, dt, city, cars, upgrades) {
+ * lifts the top speed while it lasts. `gripMult` is the crew's handling
+ * perk (Milo): 1 when nobody is hired, higher when he is on the roster. */
+export function stepDrivenCar(car, input, dt, city, cars, upgrades, gripMult = 1) {
   const spec = car.spec;
   const mult = upgradeMultipliers(upgrades);
   let topMul = mult.top;
@@ -177,7 +178,7 @@ export function stepDrivenCar(car, input, dt, city, cars, upgrades) {
     if (Math.abs(car.speed) < 4) car.speed = 0;
   }
   if (input.handbrake) car.speed *= Math.max(0, 1 - 3.2 * dt);
-  const steer = input.x * spec.grip * Math.min(1, Math.abs(car.speed) / 140);
+  const steer = input.x * spec.grip * gripMult * Math.min(1, Math.abs(car.speed) / 140);
   car.angle += steer * (car.speed >= 0 ? 1 : -1) * dt * Math.sign(car.speed || 1);
   const nx = car.x + Math.cos(car.angle) * car.speed * dt;
   const ny = car.y + Math.sin(car.angle) * car.speed * dt;

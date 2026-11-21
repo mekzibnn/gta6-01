@@ -3,12 +3,16 @@
 // hidden packages. A mission is a list of objectives; each one points at a
 // place and pays when the player gets there (or does the job) in time.
 import { MISSION_REWARD, TAXI_FARE, PACKAGE_BONUS, HIDDEN_PACKAGES, RACES, SMUGGLE } from './config.js';
+import { empireVentureCount } from './empire.js';
+import { crewHiredCount } from './crew.js';
+import { racesWonCount } from './races.js';
 
-// Ten story jobs, in order. `time` is a mission-wide countdown, `wanted` is
+// Twelve story jobs, in order. `time` is a mission-wide countdown, `wanted` is
 // the heat Mara puts on Leo when the job starts. Step types: steal (get in a
 // car), goto (reach a place), grab (stay put), wanted (reach a wanted level),
 // race (checkpoints in order), survive (stay alive for `time` seconds),
-// drop (deliver a package: pays on the spot and raises the heat a star).
+// drop (deliver a package: pays on the spot and raises the heat a star),
+// own (hold a business), hire (have a crew mate), win (have won a race).
 // `heatLock` on a job means the wanted level cannot decay below its start
 // while the job runs.
 export const STORY = [
@@ -125,6 +129,26 @@ export const STORY = [
     steps: [
       { type: 'survive', time: 90, text: 'Ride out the five-star heat for 90 seconds' },
       { type: 'goto', place: 'hideout', text: 'Vanish at the Hideout' },
+    ],
+  },
+  {
+    id: 'empire',
+    title: 'Empire Rising',
+    brief: 'Mara: "Time to own a piece of Solmar, Leo. Buy a storefront, then run one delivery for it — the city pays its owners."',
+    reward: MISSION_REWARD[10],
+    steps: [
+      { type: 'own', text: 'Buy your first business (drive to a storefront, press E)' },
+      { type: 'drop', place: 'laundry', text: 'Deliver the parcel to Solmar Laundry' },
+    ],
+  },
+  {
+    id: 'crewup',
+    title: 'Crew Up',
+    brief: 'Mara: "A boss needs a crew. Hire one specialist at the Overpass Bar, then win a street race with them watching."',
+    reward: MISSION_REWARD[11],
+    steps: [
+      { type: 'hire', text: 'Hire one crew mate at The Overpass Bar' },
+      { type: 'win', text: 'Win one street race at the Portside Drag Strip' },
     ],
   },
 ];
@@ -307,6 +331,28 @@ export function stepMission(state, player, city, dt, audio) {
     state.surviveTimer -= dt;
     if (state.surviveTimer <= 0) {
       state.surviveTimer = 0;
+      return advanceStep(state, player, audio);
+    }
+    return null;
+  }
+  if (step.type === 'own') {
+    // Empire Rising: the step clears the moment Leo holds any storefront.
+    // The empire itself lives on the mission state (the loop attaches it).
+    if (state.empire && empireVentureCount(state.empire) >= 1) {
+      return advanceStep(state, player, audio);
+    }
+    return null;
+  }
+  if (step.type === 'hire') {
+    // Crew Up: the step clears once a specialist is on the roster.
+    if (state.roster && crewHiredCount(state.roster) >= 1) {
+      return advanceStep(state, player, audio);
+    }
+    return null;
+  }
+  if (step.type === 'win') {
+    // Crew Up: the step clears once Leo has won a street series race.
+    if (state.streetRaces && racesWonCount(state.streetRaces) >= 1) {
       return advanceStep(state, player, audio);
     }
     return null;

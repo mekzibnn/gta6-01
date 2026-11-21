@@ -178,6 +178,20 @@ export function buildCity(random) {
     portbank: { x: 3150, y: 1350, label: 'Portside Bank' },
     beachbar: { x: 1750, y: 2200, label: 'Playa Bar' },
     race: { x: 1350, y: 2150, label: 'Palm Strip Race' },
+    // v5: the businesses Leo can buy, the bar where the crew drinks, the
+    // drag strip where the street series runs, and its six gates.
+    taxioffice: { x: 2550, y: 950, label: 'Sunset Taxi Co.' },
+    laundry: { x: 550, y: 1350, label: 'Solmar Laundry' },
+    club: { x: 2950, y: 1750, label: 'Neon Palms Club' },
+    wash: { x: 1750, y: 550, label: 'Palm Wash' },
+    crewbar: { x: 950, y: 2150, label: 'The Overpass Bar' },
+    dragstrip: { x: 2950, y: 550, label: 'Portside Drag Strip' },
+    gate1: { x: 550, y: 950, label: 'Gate 1' },
+    gate2: { x: 950, y: 1750, label: 'Gate 2' },
+    gate3: { x: 2150, y: 550, label: 'Gate 3' },
+    gate4: { x: 2550, y: 2150, label: 'Gate 4' },
+    gate5: { x: 2950, y: 950, label: 'Gate 5' },
+    gate6: { x: 1350, y: 1350, label: 'Gate 6' },
   };
 
   // Landmark buildings at the named places. The mission logic points at the

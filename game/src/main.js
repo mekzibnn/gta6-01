@@ -1,14 +1,17 @@
 // stages that scene instead of running the loop, paints it twice and sets
 // window.__shotReady for a screenshot.
-import { STEP, WANTED, POLICE, TRAFFIC, PED, HELI, RESPECT_RANKS, RESPECT_MISSION, RESPECT_RACE, RESPECT_TAXI, RESPECT_PACKAGE, WEAPONS, WEAPON_ORDER, RACES, DAYNIGHT } from './config.js';
+import { STEP, WANTED, POLICE, TRAFFIC, PED, HELI, RESPECT_RANKS, RESPECT_MISSION, RESPECT_RACE, RESPECT_TAXI, RESPECT_PACKAGE, WEAPONS, WEAPON_ORDER, RACES, DAYNIGHT, STREET_SERIES } from './config.js';
 import { createRandom, pick, range, shuffle } from './random.js';
 import { buildCity, nearestRoadPoint, groundAt, resolveCircle, districtAt } from './city.js';
 import { createCar, spawnParkedCar, spawnTrafficCar, stepDrivenCar, stepTrafficCar, stepPoliceCar, createHelicopter, stepHelicopter } from './vehicles.js';
 import { createPlayer, stepPlayerOnFoot, punch, shoot, spawnPed, spawnCop, stepCop, createCrewMember, stepCrew } from './actors.js';
 import { buyUpgrade, useNitro, createUpgradeState, sanitizeUpgrades, raceRewardMultiplier, bustedPenalty, sellCar } from './upgrades.js';
 import { createDayNight, stepDayNight, syncDayNight, nightPayMultiplier, PHASE_TOASTS } from './daynight.js';
-import { createWeather, stepWeather, weatherTip } from './weather.js';
-import { createStats, sanitizeStats, trackDrive, trackEarn, trackMission, trackRace, trackRaceBest, trackHit, trackBust, trackTime } from './stats.js';
+import { createWeather, stepWeather, weatherTip, raceRainBonus } from './weather.js';
+import { createStats, sanitizeStats, trackDrive, trackEarn, trackBusinessIncome, trackSeriesWin, trackMission, trackRace, trackRaceBest, trackHit, trackBust, trackTime } from './stats.js';
+import { newEmpire, tickVentureIncome, serializeEmpire, restoreEmpire } from './empire.js';
+import { newCrew, crewHandlingFactor, crewCooldownFactor, crewDamageFactor, serializeCrew, restoreCrew } from './crew.js';
+import { newRaces, raceRunning, raceGatePassed, finishRace as finishStreetRace, raceById, abandonRace, serializeRaces, restoreRaces, RACE_GATE_KEYS } from './races.js';
 import { stepPeds } from './peds.js';
 import { enterShop, shopPrompt } from './shops.js';
 import {
@@ -22,10 +25,13 @@ import { drawHud } from './hud.js';
 import { saveGame, loadSave, clearSave, hasSave } from './save.js';
 import { stageShot } from './shots.js';
 import {
-  ACTION_ENTER, ACTION_PUNCH, ACTION_PAUSE, ACTION_CONFIRM, ACTION_WEAPON, ACTION_RADIO, ACTION_CAMERA, ACTION_NITRO, createInput,
+  ACTION_ENTER, ACTION_PUNCH, ACTION_PAUSE, ACTION_CONFIRM, ACTION_WEAPON, ACTION_RADIO, ACTION_CAMERA, ACTION_NITRO, ACTION_ABANDON, createInput,
 } from './input.js';
 
 const MAX_FRAME = 0.25;
+
+/** The street series runs its gates in this order, first to last. */
+const STREET_GATE_KEYS = RACE_GATE_KEYS;
 
 const params = new URLSearchParams(window.location.search);
 const shot = params.get('shot');
@@ -113,6 +119,11 @@ function createGame(seedValue) {
     weather: createWeather(),
     // v3 systems: the career's own record, shown on the pause screen.
     stats: createStats(),
+    // v5 systems: the business empire, the hired crew, the street series.
+    empire: newEmpire(),
+    roster: newCrew(),
+    streetRaces: newRaces(),
+    empireLastHour: 10,
     weaponsOwned: ['fists', 'pistol'],
     raceBest: null,
     shake: 0,
@@ -120,6 +131,11 @@ function createGame(seedValue) {
     snapCam: false,
     shotCam: null,
   };
+  // The story jobs read the new systems through the mission state, so the
+  // 'own' / 'hire' / 'win' steps can see them without a new argument.
+  game.mission.empire = game.empire;
+  game.mission.roster = game.roster;
+  game.mission.streetRaces = game.streetRaces;
   return game;
 }
 
@@ -210,9 +226,10 @@ function updateWanted(game, dt) {
   }
   player.wantedTimer += dt;
   // After dark the heat sticks longer: the night holds a wanted level.
-  const decaySeconds = game.daynight && game.daynight.nightFactor > 0.6
+  // Vera's crew perk shortens the wait: the heat fades faster with her.
+  const decaySeconds = (game.daynight && game.daynight.nightFactor > 0.6
     ? WANTED.decaySeconds * (1 + DAYNIGHT.nightDecaySlow)
-    : WANTED.decaySeconds;
+    : WANTED.decaySeconds) / crewCooldownFactor(game.roster);
   if (player.wantedTimer >= decaySeconds) {
     player.wanted -= 1;
     player.wantedTimer = 0;
@@ -480,6 +497,21 @@ function stepGame(game, input, dt) {
   }
   if (game.toastTime > 0) game.toastTime -= dt;
 
+  // The empire pays by the game hour: every hour that turns, each owned
+  // storefront drops its take into Leo's pocket.
+  const hourNow = Math.floor(game.clock / 60) % 24;
+  if (hourNow !== game.empireLastHour) {
+    const owed = (hourNow - game.empireLastHour + 24) % 24;
+    const payout = tickVentureIncome(game.empire, owed, hourNow);
+    if (payout.amount > 0) {
+      player.cash += payout.amount;
+      trackEarn(game.stats, payout.amount);
+      trackBusinessIncome(game.stats, payout.amount);
+      setToast(game, `EMPIRE — businesses paid $${payout.amount}`, 3, '#7dff8a');
+    }
+    game.empireLastHour = hourNow;
+  }
+
   // Delayed start of the next story mission.
   if (game.missionDelay > 0) {
     game.missionDelay -= dt;
@@ -497,6 +529,11 @@ function stepGame(game, input, dt) {
   const actions = input.takeActions();
   const axes = input.axes();
   player.run = input.running();
+  // X abandons a running street series race (the entry fee stays with the flag).
+  if ((actions & ACTION_ABANDON) && game.streetRaces && game.streetRaces.running) {
+    abandonRace(game.streetRaces);
+    setToast(game, 'Race abandoned — the fee stays with the flag', 2.5);
+  }
   // Radio (R): cycle the three stations. Camera (C): chase / high.
   if (actions & ACTION_RADIO) {
     game.radio = (game.radio + 1) % 3;
@@ -546,7 +583,7 @@ function stepGame(game, input, dt) {
     stepPlayerOnFoot(player, axes, dt, city, aimAngle, input.firing(), game.peds, game.cops);
     if (actions & ACTION_ENTER) handleEnter(game);
     if (actions & ACTION_PUNCH) {
-      const hits = punch(player, game.peds, game.cops, game.audio);
+      const hits = punch(player, game.peds, game.cops, game.audio, crewDamageFactor(game.roster));
       if (hits > 0) {
         spawnParticles(game, player.x + Math.cos(player.angle) * 30, player.y + Math.sin(player.angle) * 30, '#ffd94a', 6, 80);
         const copNear = game.cops.some((c) => Math.hypot(c.x - player.x, c.y - player.y) < 300);
@@ -560,7 +597,7 @@ function stepGame(game, input, dt) {
       setToast(game, WEAPONS[player.weapon].name, 1.2);
     }
     if (input.firing() && player.weapon !== 'fists') {
-      const hit = shoot(player, aimAngle, game.peds, game.cops, game.cars, game.audio);
+      const hit = shoot(player, aimAngle, game.peds, game.cops, game.cars, game.audio, crewDamageFactor(game.roster));
       if (hit) {
         trackHit(game.stats);
         spawnParticles(game, player.x + Math.cos(aimAngle) * 60, player.y + Math.sin(aimAngle) * 60, '#ff5a4e', 8, 100);
@@ -570,7 +607,7 @@ function stepGame(game, input, dt) {
     }
   } else if (player.car) {
     const car = player.car;
-    const result = stepDrivenCar(car, { x: axes.x, y: axes.y, handbrake: input.handbrake() }, dt, city, game.cars, game.upgrades);
+    const result = stepDrivenCar(car, { x: axes.x, y: axes.y, handbrake: input.handbrake() }, dt, city, game.cars, game.upgrades, crewHandlingFactor(game.roster));
     trackDrive(game.stats, car, dt);
     player.x = car.x;
     player.y = car.y;
@@ -733,6 +770,32 @@ function stepGame(game, input, dt) {
       setToast(game, 'Race over — too slow. The flag is still there.', 3, '#ff5a4e');
     }
   }
+  // The v5 street series: gates in order against the clock, prize at the flag.
+  const streetRun = game.streetRaces ? raceRunning(game.streetRaces) : null;
+  if (streetRun) {
+    const card = raceById(streetRun.raceId);
+    const gateKey = STREET_GATE_KEYS[streetRun.gate];
+    const gatePlace = gateKey ? city.places[gateKey] : null;
+    if (gatePlace && Math.hypot(player.x - gatePlace.x, player.y - gatePlace.y) < STREET_SERIES.gateRadius) {
+      const passed = raceGatePassed(game.streetRaces);
+      if (passed.done) {
+        const elapsedMs = Math.max(0, Math.round((game.time - streetRun.startedAt) * 1000));
+        const outcome = finishStreetRace(game.streetRaces, elapsedMs);
+        // A wet race pays a quarter more — the rain bonus from the weather.
+        const prize = Math.round(outcome.prize * raceRainBonus(game.weather));
+        player.cash += prize;
+        trackEarn(game.stats, prize);
+        trackSeriesWin(game.stats);
+        trackRace(game.stats, true);
+        trackRaceBest(game.stats, elapsedMs / 1000);
+        awardRespect(game, RESPECT_RACE, true);
+        setToast(game, `STREET SERIES — ${card.name} won, +$${prize}${outcome.isRecord ? ' (new best!)' : ''}`, 4, '#7dff8a');
+        saveGame(game);
+      } else {
+        setToast(game, `Gate ${passed.gate}/${passed.total} — keep going!`, 2, '#ffd94a');
+      }
+    }
+  }
   if (checkPackages(game.mission, player, city, game.audio) > 0) {
     awardRespect(game, RESPECT_PACKAGE, false);
     setToast(game, `Hidden package found! +$100 (${packagesLeft(game.mission)} left)`, 3, '#ffd94a');
@@ -826,6 +889,15 @@ function runGame() {
     if (save.ammo) game.player.ammo = save.ammo;
     if (save.radio !== undefined) { game.radio = save.radio; game.audio.setStation(save.radio); }
     game.raceBest = save.raceBest || null;
+    // v5 systems: the empire, the roster and the series come back too, and
+    // the story jobs are re-pointed at the restored copies.
+    game.empire = restoreEmpire(save.empire);
+    game.roster = restoreCrew(save.roster);
+    game.streetRaces = restoreRaces(save.streetRaces);
+    game.mission.empire = game.empire;
+    game.mission.roster = game.roster;
+    game.mission.streetRaces = game.streetRaces;
+    game.empireLastHour = Math.floor(game.clock / 60) % 24;
     for (let i = 0; i < game.mission.packagesFound; i += 1) {
       game.city.hiddenPackages[i].found = true;
     }

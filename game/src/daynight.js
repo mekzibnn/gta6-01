@@ -35,6 +35,12 @@ export function hourOf(clockMinutes) {
   return ((clockMinutes / 60) % 24 + 24) % 24;
 }
 
+/** Club hours: the strip's late trade, 21:00 to 05:00, when the Neon
+ * Palms Club earns double and the streets belong to the night crowd. */
+export function isNightHour(hour) {
+  return hour >= 21 || hour < 5;
+}
+
 /** The phase the clock is in right now. */
 export function phaseAt(clockMinutes) {
   const hour = hourOf(clockMinutes);

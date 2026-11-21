@@ -12,6 +12,7 @@ export const ACTION_HANDBRAKE = 32;
 export const ACTION_RADIO = 64;
 export const ACTION_CAMERA = 128;
 export const ACTION_NITRO = 256;
+export const ACTION_ABANDON = 512;
 
 // One-shot presses: each physical key maps to at most one action flag.
 // (Space is CONFIRM here; it doubles as the handbrake while held — see the
@@ -25,6 +26,7 @@ const PRESS_ACTIONS = [
   [['KeyR'], ACTION_RADIO],
   [['KeyC'], ACTION_CAMERA],
   [['KeyN'], ACTION_NITRO],
+  [['KeyX'], ACTION_ABANDON],
   [['KeyM'], 'mute'],
 ];
 

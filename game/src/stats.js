@@ -18,6 +18,8 @@ export function createStats() {
     busts: 0,
     timePlayed: 0,
     bestRaceSecs: null,
+    businessIncome: 0,
+    seriesWon: 0,
   };
 }
 
@@ -28,6 +30,8 @@ export const MILESTONES = [
   { id: 'first-job', test: (s) => s.missionsDone >= 1, text: 'First job done — Mara trusts you now' },
   { id: 'five-jobs', test: (s) => s.missionsDone >= 5, text: 'Five jobs done — Solmar regular' },
   { id: 'first-race', test: (s) => s.racesWon >= 1, text: 'First race won — the flag is yours' },
+  { id: 'first-biz', test: (s) => s.businessIncome >= 100, text: 'First $100 from a business — the empire pays' },
+  { id: 'series-champ', test: (s) => s.seriesWon >= 3, text: 'Three series races won — Solmar\'s fastest' },
   { id: 'rich', test: (s) => s.moneyEarned >= 10000, text: '$10,000 earned — Solmar pays its debts' },
   { id: 'speed', test: (s) => s.topSpeedKmh >= 200, text: '200 km/h — the fastest thing in Solmar' },
 ];
@@ -63,6 +67,18 @@ export function trackDrive(stats, car, dt) {
 export function trackEarn(stats, amount) {
   if (!stats || !amount) return;
   stats.moneyEarned += amount;
+}
+
+/** Business income: the empire's hourly take, counted apart from jobs. */
+export function trackBusinessIncome(stats, amount) {
+  if (!stats || !amount) return;
+  stats.businessIncome += amount;
+}
+
+/** A street series race won (the v5 events, not the old flag race). */
+export function trackSeriesWin(stats) {
+  if (!stats) return;
+  stats.seriesWon += 1;
 }
 
 /** A story mission finished. */
@@ -121,8 +137,10 @@ export function statsRows(stats) {
     { label: 'Distance driven', value: `${s.distanceKm.toFixed(1)} km` },
     { label: 'Top speed', value: `${s.topSpeedKmh} km/h` },
     { label: 'Money earned', value: `$${s.moneyEarned.toLocaleString('en-US')}` },
-    { label: 'Missions finished', value: `${s.missionsDone} / 10` },
+    { label: 'Missions finished', value: `${s.missionsDone} / 12` },
     { label: 'Street races', value: `${s.racesWon} won / ${s.racesRun} run` },
+    { label: 'Series races won', value: `${s.seriesWon}` },
+    { label: 'Business income', value: `$${s.businessIncome.toLocaleString('en-US')}` },
     { label: 'Best race time', value: s.bestRaceSecs === null ? '—' : `${s.bestRaceSecs.toFixed(1)}s` },
     { label: 'Shots on target', value: `${s.shotsHit}` },
     { label: 'Times busted', value: `${s.busts}` },
