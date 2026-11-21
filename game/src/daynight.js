@@ -1,7 +1,3 @@
-// The day/night cycle, v3. Solmar runs on a 24-hour clock: dawn over the
-// marina, a bright working day, golden hour on Palm Strip, then dusk and a
-// night lit by streetlamps, headlights and the Air One searchlight. The
-// cycle is more than a sky colour — the time of day changes what the city
 // pays: night fares are worth half as much again, and the streets empty
 // out after dark while the heat gets harder to shake.
 //

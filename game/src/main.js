@@ -1,8 +1,3 @@
-// Boot and the one loop: input is read every frame, the world advances in
-// fixed 1/60 s steps, and the renderer paints what is there. The game moves
-// between screens: title, play, paused, busted, wasted and win.
-//
-// ?seed=N fixes the city. ?shot=cover|drive|mission|night (with &seed=N)
 // stages that scene instead of running the loop, paints it twice and sets
 // window.__shotReady for a screenshot.
 import { STEP, WANTED, POLICE, TRAFFIC, PED, HELI, RESPECT_RANKS, RESPECT_MISSION, RESPECT_RACE, RESPECT_TAXI, RESPECT_PACKAGE, WEAPONS, WEAPON_ORDER, RACES, DAYNIGHT } from './config.js';

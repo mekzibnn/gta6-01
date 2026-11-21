@@ -1,7 +1,3 @@
-// The renderer, v2: full 3D. Solmar is built in three.js from the same 2D
-// simulation the v1 top-down game used — the city grid, roads, buildings,
-// cars and people are the same data, now rendered as a sun-soaked 3D city
-// with a chase camera behind the player. The HUD (cash, stars, minimap,
 // menus) stays a 2D canvas layered over the 3D view, so screenshots show
 // the game exactly as the player sees it.
 //

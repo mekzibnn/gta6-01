@@ -1,6 +1,3 @@
-// The shops of Solmar, v3. Every place the E key can use — the race
-// flag, the gun shop, the clinic, Mara's Garage, Spray & Go, and the taxi
-// fares — is one entry in a registry: where it is, which seat it works
 // from, what the HUD promises, and what happens when Leo walks in. The
 // main loop no longer carries a chain of ifs for each shop; it asks the
 // registry what is in range and lets that entry run. Priority is the

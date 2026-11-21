@@ -1,7 +1,3 @@
-// Mara's Garage, v3: the full upgrade shop. Leo's cars are no longer just
-// stolen metal — every car he owns can be tuned at the garage, and the tuning
-// is part of the career: engine and armor tiers, paint jobs, and nitro
-// charges for a burst of speed when the SCPD is closing in. The shop owns
 // its catalogue, its prices, and what each tier does to a car, so the
 // physics (vehicles.js) and the save file (save.js) never hard-code a tier.
 import { GARAGE, WANTED } from './config.js';

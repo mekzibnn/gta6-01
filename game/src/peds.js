@@ -1,7 +1,3 @@
-// Pedestrian minds, v3. The people of Solmar used to wander at random;
-// now they live in the city. Every ped has a role and a route: commuters
-// walk the sidewalks to work, joggers run the beach front, tourists drift
-// between landmarks and stop to look. They walk the pavement, not the
 // asphalt — routes follow the sidewalk graph (city.walkways: pavement
 // corners at every crossing, linked along each road edge). And they
 // react: a gunshot, a crash or a police chase sends the nearest peds
