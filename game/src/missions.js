@@ -1,9 +1,13 @@
-// Missions and side work. Mara, the fixer, calls Leo with a chain of five
-// story jobs; between them the city offers taxi fares and ten hidden packages.
-// A mission is a list of objectives; each one points at a place and pays when
-// the player gets there (or does the job) in time.
+// Missions and side work. Mara, the fixer, calls Leo with a chain of eight
+// story jobs; between them the city offers taxi fares, street races and ten
+// hidden packages. A mission is a list of objectives; each one points at a
+// place and pays when the player gets there (or does the job) in time.
 import { MISSION_REWARD, TAXI_FARE, PACKAGE_BONUS, HIDDEN_PACKAGES, RACES } from './config.js';
 
+// Eight story jobs, in order. `time` is a mission-wide countdown, `wanted` is
+// the heat Mara puts on Leo when the job starts. Step types: steal (get in a
+// car), goto (reach a place), grab (stay put), wanted (reach a wanted level),
+// race (checkpoints in order), survive (stay alive for `time` seconds).
 export const STORY = [
   {
     id: 'wheels',
@@ -96,6 +100,10 @@ export const STORY = [
   },
 ];
 
+// ---------------------------------------------------------------------------
+// Mission state
+// ---------------------------------------------------------------------------
+
 export function createMissionState() {
   return {
     index: 0,
@@ -123,6 +131,17 @@ export function currentStep(state) {
   if (!mission) return null;
   return mission.steps[state.step];
 }
+
+/** The place key of the current race checkpoint, or null. */
+export function currentRaceCheckpoint(state) {
+  const step = currentStep(state);
+  if (!step || step.type !== 'race' || !state.raceCheck) return null;
+  return step.checkpoints[state.raceCheck.index] || null;
+}
+
+// ---------------------------------------------------------------------------
+// Starting, failing, completing
+// ---------------------------------------------------------------------------
 
 export function startMission(state, audio) {
   const mission = currentMission(state);
@@ -162,12 +181,25 @@ export function completeMission(state, player, audio) {
   return mission.reward;
 }
 
-/** The place key of the current race checkpoint, or null. */
-export function currentRaceCheckpoint(state) {
-  const step = currentStep(state);
-  if (!step || step.type !== 'race' || !state.raceCheck) return null;
-  return step.checkpoints[state.raceCheck.index] || null;
+/** Advance one step; complete the mission when the last step is done. */
+function advanceStep(state, player, audio) {
+  const mission = currentMission(state);
+  state.step += 1;
+  if (state.step >= mission.steps.length) {
+    const reward = completeMission(state, player, audio);
+    return `mission-done:${reward}`;
+  }
+  return 'step-done';
 }
+
+/** Is the player within `radius` of a place? */
+function atPlace(player, place, radius) {
+  return place && Math.hypot(player.x - place.x, player.y - place.y) < radius;
+}
+
+// ---------------------------------------------------------------------------
+// Stepping a mission
+// ---------------------------------------------------------------------------
 
 /** Advance mission logic one step. Returns an event string or null. */
 export function stepMission(state, player, city, dt, audio) {
@@ -185,33 +217,22 @@ export function stepMission(state, player, city, dt, audio) {
   if (!step) return null;
   const place = step.place ? city.places[step.place] : null;
   if (step.type === 'steal') {
-    if (!player.onFoot) {
-      state.step += 1;
-      return 'step-done';
-    }
+    if (!player.onFoot) return advanceStep(state, player, audio);
     return null;
   }
   if (step.type === 'goto' && place) {
-    const d = Math.hypot(player.x - place.x, player.y - place.y);
-    if (d < 90) {
-      state.step += 1;
+    if (atPlace(player, place, 90)) {
       if (audio) audio.coin();
-      if (state.step >= mission.steps.length) {
-        const reward = completeMission(state, player, audio);
-        return `mission-done:${reward}`;
-      }
-      return 'step-done';
+      return advanceStep(state, player, audio);
     }
     return null;
   }
   if (step.type === 'grab') {
-    const d = Math.hypot(player.x - city.places.portbank.x, player.y - city.places.portbank.y);
-    if (d < 110) {
+    if (atPlace(player, city.places.portbank, 110)) {
       state.grabTimer += dt;
       if (state.grabTimer >= 4) {
-        state.step += 1;
         state.grabTimer = 0;
-        return 'step-done';
+        return advanceStep(state, player, audio);
       }
     } else {
       state.grabTimer = 0;
@@ -219,27 +240,19 @@ export function stepMission(state, player, city, dt, audio) {
     return null;
   }
   if (step.type === 'wanted') {
-    if (player.wanted >= 2) {
-      state.step += 1;
-      return 'step-done';
-    }
+    if (player.wanted >= 2) return advanceStep(state, player, audio);
     return null;
   }
   if (step.type === 'race') {
     // Checkpoint chain: hit each place in order before the timer runs out.
     if (!state.raceCheck) state.raceCheck = { index: 0 };
     const key = step.checkpoints[state.raceCheck.index];
-    const place = city.places[key];
-    if (place && Math.hypot(player.x - place.x, player.y - place.y) < 90) {
+    if (atPlace(player, city.places[key], 90)) {
       state.raceCheck.index += 1;
       if (audio) audio.coin();
       if (state.raceCheck.index >= step.checkpoints.length) {
         state.raceCheck = null;
-        state.step += 1;
-        if (state.step >= mission.steps.length) {
-          const reward = completeMission(state, player, audio);
-          return `mission-done:${reward}`;
-        }
+        return advanceStep(state, player, audio);
       }
       return 'step-done';
     }
@@ -251,17 +264,16 @@ export function stepMission(state, player, city, dt, audio) {
     state.surviveTimer -= dt;
     if (state.surviveTimer <= 0) {
       state.surviveTimer = 0;
-      state.step += 1;
-      if (state.step >= mission.steps.length) {
-        const reward = completeMission(state, player, audio);
-        return `mission-done:${reward}`;
-      }
-      return 'step-done';
+      return advanceStep(state, player, audio);
     }
     return null;
   }
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// Taxi fares
+// ---------------------------------------------------------------------------
 
 /** Start a taxi fare: a waiting ped wants a ride to a random place. */
 export function startTaxi(state, player, city, random) {
@@ -283,6 +295,7 @@ export function stepTaxi(state, player, dt, audio) {
   return null;
 }
 
+/** Pay the fare out when the passenger is dropped off. */
 export function finishTaxi(state, player, audio) {
   if (!state.taxi) return 0;
   const fare = TAXI_FARE + Math.floor(Math.random() * 60);
@@ -291,6 +304,10 @@ export function finishTaxi(state, player, audio) {
   if (audio) audio.coin();
   return fare;
 }
+
+// ---------------------------------------------------------------------------
+// Hidden packages
+// ---------------------------------------------------------------------------
 
 /** Check hidden packages: the player walks over one. Returns 1 when found. */
 export function checkPackages(state, player, city, audio) {
@@ -340,7 +357,7 @@ export function stepRace(state, player, city, dt, audio) {
     return 'race-failed';
   }
   const place = city.places[RACES.checkpoints[state.checkpoint]];
-  if (place && Math.hypot(player.x - place.x, player.y - place.y) < 90) {
+  if (atPlace(player, place, 90)) {
     state.checkpoint += 1;
     if (audio) audio.coin();
     if (state.checkpoint >= RACES.checkpoints.length) {

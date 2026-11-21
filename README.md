@@ -13,7 +13,7 @@ sun-soaked coastal city. Drive and steal cars, outrun the SCPD wanted
 system, run eight story missions, pick up taxi fares, and find ten hidden
 packages — on foot and behind the wheel.
 
-## Play
+## How to play
 
 Serve `game/` with any static server and open `index.html` in desktop
 Chrome (or run `node serve.ts` and open http://localhost:8080). No network

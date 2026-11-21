@@ -36,24 +36,31 @@ function lerpColor(a, b, t) {
   );
 }
 
-/** The whole city painted once onto a texture: sidewalks, roads, lots, parks, beach, sea. */
-function makeGroundTexture(city) {
-  const cv = document.createElement('canvas');
-  cv.width = TEX_SIZE;
-  cv.height = TEX_SIZE;
-  const ctx = cv.getContext('2d');
-  ctx.setTransform(TEX_SIZE / WORLD.width, 0, 0, TEX_SIZE / WORLD.height, 0, 0);
-  // Sidewalk base over the whole playfield.
-  ctx.fillStyle = PALETTE.sidewalk;
-  ctx.fillRect(0, 0, WORLD.width, WORLD.height);
-  // Beach and sea at the south edge.
-  ctx.fillStyle = PALETTE.sand;
-  ctx.fillRect(0, CITY.beachY, WORLD.width, WORLD.height - CITY.beachY);
-  ctx.fillStyle = PALETTE.sea;
-  ctx.fillRect(0, CITY.seaY, WORLD.width, WORLD.height - CITY.seaY);
-  ctx.fillStyle = PALETTE.seaDeep;
-  for (let i = 0; i < 5; i += 1) ctx.fillRect(0, CITY.seaY + 40 + i * 55, WORLD.width, 6);
-  // Asphalt roads.
+// Shared materials, cached by colour so the scene stays cheap.
+const materialCache = new Map();
+function lambert(color, opts) {
+  const key = `${color}:${JSON.stringify(opts || {})}`;
+  const hit = materialCache.get(key);
+  if (hit) return hit;
+  const mat = new THREE.MeshLambertMaterial({ color, ...(opts || {}) });
+  materialCache.set(key, mat);
+  return mat;
+}
+const glassMat = new THREE.MeshLambertMaterial({ color: 0x14202c });
+const darkMat = new THREE.MeshLambertMaterial({ color: 0x14161a });
+const tireMat = new THREE.MeshLambertMaterial({ color: 0x0e0f11 });
+const trunkMat = new THREE.MeshLambertMaterial({ color: 0x7a5a38 });
+const palmMat = new THREE.MeshLambertMaterial({ color: 0x3f8f4f });
+const headlightMat = new THREE.MeshLambertMaterial({ color: 0xffe9a8, emissive: 0xffe9a8, emissiveIntensity: 0.9 });
+const taillightMat = new THREE.MeshLambertMaterial({ color: 0xff3b30, emissive: 0xff3b30, emissiveIntensity: 0.7 });
+const goldMat = new THREE.MeshLambertMaterial({ color: 0xffd94a, emissive: 0xffd94a, emissiveIntensity: 0.8 });
+
+// ---------------------------------------------------------------------------
+// Textures painted on 2D canvases: the ground, building facades, labels.
+// ---------------------------------------------------------------------------
+
+/** Asphalt roads with centre dashes, drawn onto the ground texture. */
+function paintRoads(ctx, city) {
   ctx.fillStyle = PALETTE.asphalt;
   for (const rx of city.roads.vertical) ctx.fillRect(rx - CITY.road / 2, 0, CITY.road, WORLD.height);
   for (const ry of city.roads.horizontal) ctx.fillRect(0, ry - CITY.road / 2, WORLD.width, CITY.road);
@@ -72,7 +79,10 @@ function makeGroundTexture(city) {
       for (let i = -3; i <= 3; i += 1) ctx.fillRect(rx + i * 12 - 4, ry - CITY.road / 2 - 8, 8, 16);
     }
   }
-  // Parking lots.
+}
+
+/** Parking lots and parks, drawn onto the ground texture. */
+function paintLotsAndParks(ctx, city) {
   for (const lot of city.lots) {
     ctx.fillStyle = '#4a4642';
     ctx.fillRect(lot.x, lot.y, lot.w, lot.h);
@@ -85,7 +95,6 @@ function makeGroundTexture(city) {
       ctx.stroke();
     }
   }
-  // Parks: grass, paths, pond.
   for (const park of city.parks) {
     ctx.fillStyle = PALETTE.grass;
     ctx.fillRect(park.x, park.y, park.w, park.h);
@@ -104,6 +113,27 @@ function makeGroundTexture(city) {
   // Street lamps as dots (the 3D lamps glow at night through the headlights).
   ctx.fillStyle = '#3a3f46';
   for (const lamp of city.lamps) ctx.fillRect(lamp.x - 2, lamp.y - 2, 4, 4);
+}
+
+/** The whole city painted once onto a texture: sidewalks, roads, lots, parks, beach, sea. */
+function makeGroundTexture(city) {
+  const cv = document.createElement('canvas');
+  cv.width = TEX_SIZE;
+  cv.height = TEX_SIZE;
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(TEX_SIZE / WORLD.width, 0, 0, TEX_SIZE / WORLD.height, 0, 0);
+  // Sidewalk base over the whole playfield.
+  ctx.fillStyle = PALETTE.sidewalk;
+  ctx.fillRect(0, 0, WORLD.width, WORLD.height);
+  // Beach and sea at the south edge.
+  ctx.fillStyle = PALETTE.sand;
+  ctx.fillRect(0, CITY.beachY, WORLD.width, WORLD.height - CITY.beachY);
+  ctx.fillStyle = PALETTE.sea;
+  ctx.fillRect(0, CITY.seaY, WORLD.width, WORLD.height - CITY.seaY);
+  ctx.fillStyle = PALETTE.seaDeep;
+  for (let i = 0; i < 5; i += 1) ctx.fillRect(0, CITY.seaY + 40 + i * 55, WORLD.width, 6);
+  paintRoads(ctx, city);
+  paintLotsAndParks(ctx, city);
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
@@ -193,24 +223,20 @@ function makeLabelSprite(text) {
   return sprite;
 }
 
-// Shared materials, cached by colour so the scene stays cheap.
-const materialCache = new Map();
-function lambert(color, opts) {
-  const key = `${color}:${JSON.stringify(opts || {})}`;
-  const hit = materialCache.get(key);
-  if (hit) return hit;
-  const mat = new THREE.MeshLambertMaterial({ color, ...(opts || {}) });
-  materialCache.set(key, mat);
-  return mat;
+/** The checkered race flag texture, 8x4 squares. */
+function makeFlagTexture() {
+  const flagCanvas = document.createElement('canvas');
+  flagCanvas.width = 64;
+  flagCanvas.height = 32;
+  const fctx = flagCanvas.getContext('2d');
+  for (let fy = 0; fy < 4; fy += 1) {
+    for (let fx = 0; fx < 8; fx += 1) {
+      fctx.fillStyle = (fx + fy) % 2 === 0 ? '#111111' : '#ffffff';
+      fctx.fillRect(fx * 8, fy * 8, 8, 8);
+    }
+  }
+  return new THREE.CanvasTexture(flagCanvas);
 }
-const glassMat = new THREE.MeshLambertMaterial({ color: 0x14202c });
-const darkMat = new THREE.MeshLambertMaterial({ color: 0x14161a });
-const tireMat = new THREE.MeshLambertMaterial({ color: 0x0e0f11 });
-const trunkMat = new THREE.MeshLambertMaterial({ color: 0x7a5a38 });
-const palmMat = new THREE.MeshLambertMaterial({ color: 0x3f8f4f });
-const headlightMat = new THREE.MeshLambertMaterial({ color: 0xffe9a8, emissive: 0xffe9a8, emissiveIntensity: 0.9 });
-const taillightMat = new THREE.MeshLambertMaterial({ color: 0xff3b30, emissive: 0xff3b30, emissiveIntensity: 0.7 });
-const goldMat = new THREE.MeshLambertMaterial({ color: 0xffd94a, emissive: 0xffd94a, emissiveIntensity: 0.8 });
 
 // ---------------------------------------------------------------------------
 // Mesh builders: the city is built once per seed; cars, people and the heli
@@ -222,28 +248,9 @@ function buildingHeight(b) {
   return 46 + b.height * 190;
 }
 
-function buildCityMeshes(scene, city) {
-  const group = new THREE.Group();
-  // Ground plane with the painted city texture.
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(WORLD.width, WORLD.height),
-    new THREE.MeshLambertMaterial({ map: makeGroundTexture(city) }),
-  );
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set(WORLD.width / 2, 0, WORLD.height / 2);
-  ground.receiveShadow = true;
-  group.add(ground);
-  // Sea shimmer: a translucent plane over the water, slightly above ground.
-  const sea = new THREE.Mesh(
-    new THREE.PlaneGeometry(WORLD.width, WORLD.height - CITY.seaY),
-    new THREE.MeshLambertMaterial({ color: 0x2a9bc4, transparent: true, opacity: 0.25 }),
-  );
-  sea.rotation.x = -Math.PI / 2;
-  sea.position.set(WORLD.width / 2, 1.5, (CITY.seaY + WORLD.height) / 2);
-  group.add(sea);
-
-  // Buildings as instanced unit boxes, grouped by (colour, style) so each
-  // group shares one facade texture. Roofs are a second instanced set.
+/** Buildings as instanced unit boxes, grouped by (colour, style) so each
+ * group shares one facade texture. Roofs are a second instanced set. */
+function buildBuildings(group, city, dummy) {
   const unitBox = new THREE.BoxGeometry(1, 1, 1);
   const byFacade = new Map();
   const byRoof = new Map();
@@ -254,7 +261,6 @@ function buildCityMeshes(scene, city) {
     if (!byRoof.has(b.roof)) byRoof.set(b.roof, []);
     byRoof.get(b.roof).push(b);
   }
-  const dummy = new THREE.Object3D();
   for (const [key, list] of byFacade) {
     const [color, style] = key.split(':');
     const mat = new THREE.MeshLambertMaterial({ map: facadeTexture(color, Number(style)) });
@@ -311,53 +317,71 @@ function buildCityMeshes(scene, city) {
     sprite.position.set(b.x + b.w / 2, buildingHeight(b) + 70, b.y + b.h / 2);
     group.add(sprite);
   }
-  // Palms: instanced trunks + canopies, two draw calls for the whole city.
-  if (city.palms.length) {
-    const trunkGeo = new THREE.CylinderGeometry(2.5, 4, 30, 6);
-    const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, city.palms.length);
-    const canopyGeo = new THREE.IcosahedronGeometry(15, 0);
-    const canopies = new THREE.InstancedMesh(canopyGeo, palmMat, city.palms.length);
-    city.palms.forEach((p, i) => {
-      dummy.position.set(p.x, 15, p.y);
-      dummy.scale.set(1, 1, 1);
-      dummy.rotation.set(0, 0, 0);
-      dummy.updateMatrix();
-      trunks.setMatrixAt(i, dummy.matrix);
-      dummy.position.set(p.x + 3, 34, p.y);
-      dummy.scale.set(1, 0.45, 1);
-      dummy.rotation.set(0, p.x * 0.7, 0);
-      dummy.updateMatrix();
-      canopies.setMatrixAt(i, dummy.matrix);
-    });
-    trunks.castShadow = true;
-    canopies.castShadow = true;
-    group.add(trunks);
-    group.add(canopies);
-  }
-  // Race flag at the Palm Strip start line: a pole and a checkered flag.
+}
+
+/** Palms: instanced trunks + canopies, two draw calls for the whole city. */
+function buildPalms(group, city, dummy) {
+  if (!city.palms.length) return;
+  const trunkGeo = new THREE.CylinderGeometry(2.5, 4, 30, 6);
+  const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, city.palms.length);
+  const canopyGeo = new THREE.IcosahedronGeometry(15, 0);
+  const canopies = new THREE.InstancedMesh(canopyGeo, palmMat, city.palms.length);
+  city.palms.forEach((p, i) => {
+    dummy.position.set(p.x, 15, p.y);
+    dummy.scale.set(1, 1, 1);
+    dummy.rotation.set(0, 0, 0);
+    dummy.updateMatrix();
+    trunks.setMatrixAt(i, dummy.matrix);
+    dummy.position.set(p.x + 3, 34, p.y);
+    dummy.scale.set(1, 0.45, 1);
+    dummy.rotation.set(0, p.x * 0.7, 0);
+    dummy.updateMatrix();
+    canopies.setMatrixAt(i, dummy.matrix);
+  });
+  trunks.castShadow = true;
+  canopies.castShadow = true;
+  group.add(trunks);
+  group.add(canopies);
+}
+
+/** Race flag at the Palm Strip start line: a pole and a checkered flag. */
+function buildRaceFlag(group, city) {
   const race = city.places.race;
-  if (race) {
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 70, 6), new THREE.MeshLambertMaterial({ color: 0xdddddd }));
-    pole.position.set(race.x, 35, race.y);
-    group.add(pole);
-    const flagCanvas = document.createElement('canvas');
-    flagCanvas.width = 64;
-    flagCanvas.height = 32;
-    const fctx = flagCanvas.getContext('2d');
-    for (let fy = 0; fy < 4; fy += 1) {
-      for (let fx = 0; fx < 8; fx += 1) {
-        fctx.fillStyle = (fx + fy) % 2 === 0 ? '#111111' : '#ffffff';
-        fctx.fillRect(fx * 8, fy * 8, 8, 8);
-      }
-    }
-    const flagTex = new THREE.CanvasTexture(flagCanvas);
-    const flag = new THREE.Mesh(
-      new THREE.PlaneGeometry(46, 23),
-      new THREE.MeshLambertMaterial({ map: flagTex, side: THREE.DoubleSide }),
-    );
-    flag.position.set(race.x + 24, 56, race.y);
-    group.add(flag);
-  }
+  if (!race) return;
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 70, 6), new THREE.MeshLambertMaterial({ color: 0xdddddd }));
+  pole.position.set(race.x, 35, race.y);
+  group.add(pole);
+  const flag = new THREE.Mesh(
+    new THREE.PlaneGeometry(46, 23),
+    new THREE.MeshLambertMaterial({ map: makeFlagTexture(), side: THREE.DoubleSide }),
+  );
+  flag.position.set(race.x + 24, 56, race.y);
+  group.add(flag);
+}
+
+function buildCityMeshes(scene, city) {
+  const group = new THREE.Group();
+  const dummy = new THREE.Object3D();
+  // Ground plane with the painted city texture.
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(WORLD.width, WORLD.height),
+    new THREE.MeshLambertMaterial({ map: makeGroundTexture(city) }),
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.set(WORLD.width / 2, 0, WORLD.height / 2);
+  ground.receiveShadow = true;
+  group.add(ground);
+  // Sea shimmer: a translucent plane over the water, slightly above ground.
+  const sea = new THREE.Mesh(
+    new THREE.PlaneGeometry(WORLD.width, WORLD.height - CITY.seaY),
+    new THREE.MeshLambertMaterial({ color: 0x2a9bc4, transparent: true, opacity: 0.25 }),
+  );
+  sea.rotation.x = -Math.PI / 2;
+  sea.position.set(WORLD.width / 2, 1.5, (CITY.seaY + WORLD.height) / 2);
+  group.add(sea);
+  buildBuildings(group, city, dummy);
+  buildPalms(group, city, dummy);
+  buildRaceFlag(group, city);
   scene.add(group);
   return group;
 }
@@ -627,8 +651,9 @@ export function createRenderer(gameCanvas, hudCanvas) {
     }
   }
 
-  /** Sync every moving mesh from the simulation; create and drop as needed. */
-  function syncDynamic(game) {
+  // -- syncDynamic, split by what moves -------------------------------------
+
+  function syncCars(game) {
     const seenCars = new Set();
     for (const car of [...game.cars, ...game.policeCars]) {
       seenCars.add(car);
@@ -652,6 +677,9 @@ export function createRenderer(gameCanvas, hudCanvas) {
         dyn.cars.delete(car);
       }
     }
+  }
+
+  function syncPeople(game) {
     const seenPeople = new Set();
     const placePerson = (key, x, y, angle, skin, shirt, bob, ring) => {
       seenPeople.add(key);
@@ -694,7 +722,9 @@ export function createRenderer(gameCanvas, hudCanvas) {
         dyn.people.delete(key);
       }
     }
-    // The helicopter.
+  }
+
+  function syncHeli(game) {
     if (game.heli) {
       if (!dyn.heli) {
         dyn.heli = buildHeliMesh();
@@ -710,28 +740,31 @@ export function createRenderer(gameCanvas, hudCanvas) {
       scene.remove(dyn.heli);
       dyn.heli = null;
     }
-    // Particles.
-    if (dyn.particles) {
-      const max = 240;
-      for (let i = 0; i < max; i += 1) {
-        const p = game.particles[i];
-        if (p) {
-          dyn.particlePos[i * 3] = p.x;
-          dyn.particlePos[i * 3 + 1] = 5 + (p.life * 20);
-          dyn.particlePos[i * 3 + 2] = p.y;
-          const c = hexRgb(p.color);
-          const f = Math.max(0, p.life);
-          dyn.particleCol[i * 3] = (c[0] / 255) * f;
-          dyn.particleCol[i * 3 + 1] = (c[1] / 255) * f;
-          dyn.particleCol[i * 3 + 2] = (c[2] / 255) * f;
-        } else {
-          dyn.particlePos[i * 3 + 1] = -1000;
-        }
+  }
+
+  function syncParticles(game) {
+    if (!dyn.particles) return;
+    const max = 240;
+    for (let i = 0; i < max; i += 1) {
+      const p = game.particles[i];
+      if (p) {
+        dyn.particlePos[i * 3] = p.x;
+        dyn.particlePos[i * 3 + 1] = 5 + (p.life * 20);
+        dyn.particlePos[i * 3 + 2] = p.y;
+        const c = hexRgb(p.color);
+        const f = Math.max(0, p.life);
+        dyn.particleCol[i * 3] = (c[0] / 255) * f;
+        dyn.particleCol[i * 3 + 1] = (c[1] / 255) * f;
+        dyn.particleCol[i * 3 + 2] = (c[2] / 255) * f;
+      } else {
+        dyn.particlePos[i * 3 + 1] = -1000;
       }
-      dyn.particles.geometry.attributes.position.needsUpdate = true;
-      dyn.particles.geometry.attributes.color.needsUpdate = true;
     }
-    // Skid marks.
+    dyn.particles.geometry.attributes.position.needsUpdate = true;
+    dyn.particles.geometry.attributes.color.needsUpdate = true;
+  }
+
+  function syncSkids(game) {
     dyn.skidPool.forEach((mesh, i) => {
       const skid = game.skids[i];
       if (skid) {
@@ -741,7 +774,9 @@ export function createRenderer(gameCanvas, hudCanvas) {
         mesh.material.opacity = Math.max(0, skid.life) * 0.35;
       } else mesh.visible = false;
     });
-    // Hidden packages glow until found.
+  }
+
+  function syncPackages(game) {
     for (const { pack, mesh } of dyn.packages) {
       mesh.visible = !pack.found;
       if (mesh.visible) {
@@ -750,7 +785,9 @@ export function createRenderer(gameCanvas, hudCanvas) {
         mesh.rotation.y = game.time * 0.8;
       }
     }
-    // Mission marker beam + ring.
+  }
+
+  function syncMarker(game) {
     if (game.missionTarget && dyn.beam) {
       const t = game.missionTarget;
       dyn.beam.visible = true;
@@ -763,6 +800,17 @@ export function createRenderer(gameCanvas, hudCanvas) {
       dyn.beam.visible = false;
       dyn.ring.visible = false;
     }
+  }
+
+  /** Sync every moving mesh from the simulation; create and drop as needed. */
+  function syncDynamic(game) {
+    syncCars(game);
+    syncPeople(game);
+    syncHeli(game);
+    syncParticles(game);
+    syncSkids(game);
+    syncPackages(game);
+    syncMarker(game);
   }
 
   /** Chase camera: behind the player, smoothed, wider FOV at speed. */
@@ -822,14 +870,19 @@ export function createRenderer(gameCanvas, hudCanvas) {
     }
   }
 
+  /** Golden-hour factor: 0 by day, 1 at sunset (18:00-19:30). */
+  function goldenFactor(hour) {
+    if (hour >= 16.5 && hour < 18) return (hour - 16.5) / 1.5;
+    if (hour >= 18 && hour < 19.5) return 1;
+    if (hour >= 19.5 && hour < 20.5) return 1 - (hour - 19.5);
+    return 0;
+  }
+
   /** Sun, sky and fog follow the in-game clock. */
   function updateLighting(game) {
     const hour = (game.clock / 60) % 24;
     const nightF = game.nightFactor;
-    let goldenF = 0;
-    if (hour >= 16.5 && hour < 18) goldenF = (hour - 16.5) / 1.5;
-    else if (hour >= 18 && hour < 19.5) goldenF = 1;
-    else if (hour >= 19.5 && hour < 20.5) goldenF = 1 - (hour - 19.5);
+    const goldenF = goldenFactor(hour);
     const daySky = new THREE.Color(0x8fc3e8);
     const goldenSky = new THREE.Color(0xff9a4d);
     const nightSky = new THREE.Color(0x0a1230);

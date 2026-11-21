@@ -8,6 +8,18 @@ import { range } from './random.js';
 const SKINS = ['#f2c89b', '#c98d5f', '#8a5a3b', '#e8b88a', '#a06a42'];
 const SHIRTS = ['#e84a4a', '#3d7bfd', '#43a85a', '#f2b705', '#8a6fbf', '#e87ab0', '#3fa7a0', '#e8e2d4'];
 
+/** Angle difference wrapped to [-PI, PI]. */
+function angleDiff(a, b) {
+  let d = a - b;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
+// ---------------------------------------------------------------------------
+// The player
+// ---------------------------------------------------------------------------
+
 export function createPlayer(x, y) {
   return {
     x, y, angle: -Math.PI / 2,
@@ -55,24 +67,21 @@ export function punch(player, peds, cops, audio) {
   if (player.punchCooldown > 0) return 0;
   player.punchCooldown = 0.45;
   let hits = 0;
-  const hitOne = (target) => {
+  const strike = (target) => {
     const dx = target.x - player.x;
     const dy = target.y - player.y;
     const d = Math.hypot(dx, dy);
     if (d > PLAYER.punchRange + 12) return;
     const ang = Math.atan2(dy, dx);
-    let diff = ang - player.angle;
-    while (diff > Math.PI) diff -= Math.PI * 2;
-    while (diff < -Math.PI) diff += Math.PI * 2;
-    if (Math.abs(diff) < PLAYER.punchArc) {
+    if (Math.abs(angleDiff(ang, player.angle)) < PLAYER.punchArc) {
       target.health = (target.health ?? 50) - PLAYER.punchDamage;
       target.flee = 2.5;
       target.hitFlash = 0.3;
       hits += 1;
     }
   };
-  for (const ped of peds) hitOne(ped);
-  for (const cop of cops) hitOne(cop);
+  for (const ped of peds) strike(ped);
+  for (const cop of cops) strike(cop);
   if (audio) audio.punch();
   return hits;
 }
@@ -89,7 +98,7 @@ export function shoot(player, aimAngle, peds, cops, cars, audio) {
   const rangeMax = 520;
   const spread = player.weapon === 'shotgun' ? 26 : 8;
   const hits = [];
-  const consider = (target, radius, kind) => {
+  const testTarget = (target, radius, kind) => {
     const dx = target.x - player.x;
     const dy = target.y - player.y;
     const along = dx * Math.cos(aimAngle) + dy * Math.sin(aimAngle);
@@ -97,9 +106,9 @@ export function shoot(player, aimAngle, peds, cops, cars, audio) {
     const side = Math.abs(-dx * Math.sin(aimAngle) + dy * Math.cos(aimAngle));
     if (side < radius + spread) hits.push({ target, kind, dist: along });
   };
-  for (const ped of peds) consider(ped, 13, 'ped');
-  for (const cop of cops) consider(cop, 13, 'cop');
-  for (const car of cars) consider(car, 26, 'car');
+  for (const ped of peds) testTarget(ped, 13, 'ped');
+  for (const cop of cops) testTarget(cop, 13, 'cop');
+  for (const car of cars) testTarget(car, 26, 'car');
   hits.sort((a, b) => a.dist - b.dist);
   const take = player.weapon === 'shotgun' ? hits.slice(0, 3) : hits.slice(0, 1);
   for (const hit of take) {
@@ -113,6 +122,10 @@ export function shoot(player, aimAngle, peds, cops, cars, audio) {
   }
   return take[0] || null;
 }
+
+// ---------------------------------------------------------------------------
+// Pedestrians
+// ---------------------------------------------------------------------------
 
 /** Spawn a pedestrian on a sidewalk near a road. */
 export function spawnPed(random, city) {
@@ -165,6 +178,10 @@ export function stepPed(ped, dt, city, danger) {
     ped.angle = dir;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Foot cops
+// ---------------------------------------------------------------------------
 
 /** Spawn a foot cop at the edge of the player's view. */
 export function spawnCop(x, y) {

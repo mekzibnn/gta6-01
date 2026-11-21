@@ -5,6 +5,61 @@ import { CAR, CITY, WORLD, STEP } from './config.js';
 import { groundAt, isOnRoad, resolveCircle, roadLines } from './city.js';
 import { pick, range } from './random.js';
 
+/** Angle difference wrapped to [-PI, PI]. */
+function angleDiff(a, b) {
+  let d = a - b;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
+/** Push two overlapping cars apart along their centre line. Returns true when
+ * they overlapped (so the caller can apply a speed penalty). */
+function pushApart(a, b) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const d = Math.hypot(dx, dy);
+  if (d >= CAR.length - 6 || d <= 0.01) return false;
+  const push = (CAR.length - 6 - d) / 2;
+  a.x -= (dx / d) * push;
+  a.y -= (dy / d) * push;
+  b.x += (dx / d) * push;
+  b.y += (dy / d) * push;
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Air One: the SCPD helicopter. It spawns at 4+ wanted stars, circles the
+// player at a hover offset and keeps the heat from cooling off until it leaves.
+// ---------------------------------------------------------------------------
+
+/** Spawn the helicopter above the player. */
+export function createHelicopter(x, y) {
+  return { x: x + 200, y: y - 260, angle: 0, speed: 0, rotor: 0 };
+}
+
+/** One step: close in, circle, and hold station over the player. */
+export function stepHelicopter(heli, target, dt) {
+  const wantAngle = Math.atan2(target.y - heli.y, target.x - heli.x);
+  const diff = angleDiff(wantAngle, heli.angle);
+  heli.angle += Math.max(-1.2 * dt, Math.min(1.2 * dt, diff));
+  const dx = target.x - heli.x;
+  const dy = target.y - heli.y;
+  const dist = Math.hypot(dx, dy);
+  const speedTarget = dist > 300 ? 260 : dist > 120 ? 160 : 60;
+  heli.speed += (speedTarget - heli.speed) * Math.min(1, 1.2 * dt);
+  heli.x += Math.cos(heli.angle) * heli.speed * dt;
+  heli.y += Math.sin(heli.angle) * heli.speed * dt;
+  heli.rotor += dt * 22;
+  return dist;
+}
+
+// ---------------------------------------------------------------------------
+// Spawning
+// ---------------------------------------------------------------------------
+
+/** Build a car of a kind at a position and heading. `random` (optional) gives
+ * it a unique paint from the kind's palette so stolen cars stay recognisable. */
 export function createCar(kind, x, y, angle, random) {
   const spec = CAR.kinds[kind];
   return {
@@ -13,37 +68,41 @@ export function createCar(kind, x, y, angle, random) {
     // Traffic state: which road it follows and which way.
     axis: 'v', dir: 1, lane: 24,
     stuck: 0, police: kind === 'police',
-    // Unique paint so stolen cars stay recognisable.
     paint: random ? pick(random, [spec.color, spec.color, '#e8e2d4', '#20242c']) : spec.color,
     siren: 0,
     crashed: 0,
   };
 }
 
+/** Pick a roadside parking spot: on a vertical road, beside a random crossing;
+ * on a horizontal road, the mirror of that. Returns {x, y, angle}. */
+function roadsideSpot(random) {
+  const { vertical, horizontal } = roadLines();
+  const verticalRoad = random() < 0.5;
+  const rx = pick(random, vertical);
+  const ry = pick(random, horizontal);
+  if (verticalRoad) {
+    return {
+      x: rx + (random() < 0.5 ? -CITY.road / 2 - 16 : CITY.road / 2 + 16),
+      y: ry + range(random, -140, 140),
+      angle: random() < 0.5 ? -Math.PI / 2 : Math.PI / 2,
+    };
+  }
+  return {
+    x: rx + range(random, -140, 140),
+    y: ry + (random() < 0.5 ? -CITY.road / 2 - 16 : CITY.road / 2 + 16),
+    angle: random() < 0.5 ? 0 : Math.PI,
+  };
+}
+
 /** Spawn a parked car on a roadside somewhere in the city. */
 export function spawnParkedCar(random, city) {
-  const { vertical, horizontal } = roadLines();
   const kinds = ['sedan', 'taxi', 'sport', 'van', 'truck'];
   const kind = pick(random, kinds);
-  const verticalRoad = random() < 0.5;
-  let x;
-  let y;
-  let angle;
-  if (verticalRoad) {
-    const rx = pick(random, vertical);
-    const ry = pick(random, horizontal);
-    x = rx + (random() < 0.5 ? -CITY.road / 2 - 16 : CITY.road / 2 + 16);
-    y = ry + range(random, -140, 140);
-    angle = random() < 0.5 ? -Math.PI / 2 : Math.PI / 2;
-  } else {
-    const rx = pick(random, vertical);
-    const ry = pick(random, horizontal);
-    x = rx + range(random, -140, 140);
-    y = ry + (random() < 0.5 ? -CITY.road / 2 - 16 : CITY.road / 2 + 16);
-    angle = random() < 0.5 ? 0 : Math.PI;
-  }
-  const car = createCar(kind, x, y, angle, random);
+  const spot = roadsideSpot(random);
+  const car = createCar(kind, spot.x, spot.y, spot.angle, random);
   car.parked = true;
+  void city;
   return car;
 }
 
@@ -84,12 +143,9 @@ export function spawnTrafficCar(random) {
   return car;
 }
 
-function angleDiff(a, b) {
-  let d = a - b;
-  while (d > Math.PI) d -= Math.PI * 2;
-  while (d < -Math.PI) d += Math.PI * 2;
-  return d;
-}
+// ---------------------------------------------------------------------------
+// Stepping
+// ---------------------------------------------------------------------------
 
 /** One physics step for a driven car. Returns 'crash' when it hits something hard.
  * `upgrades` is the garage state ({engine, armor, paint}); engine raises top
@@ -131,15 +187,7 @@ export function stepDrivenCar(car, input, dt, city, cars, upgrades) {
   // Soft bumps against other cars.
   for (const other of cars) {
     if (other === car) continue;
-    const dx = other.x - car.x;
-    const dy = other.y - car.y;
-    const d = Math.hypot(dx, dy);
-    if (d < CAR.length - 6 && d > 0.01) {
-      const push = (CAR.length - 6 - d) / 2;
-      car.x -= (dx / d) * push;
-      car.y -= (dy / d) * push;
-      other.x += (dx / d) * push;
-      other.y += (dy / d) * push;
+    if (pushApart(car, other)) {
       if (Math.abs(car.speed) > 200) return 'crash';
       car.speed *= 0.85;
     }
@@ -153,11 +201,12 @@ export function stepTrafficCar(car, dt, city, cars, random) {
   const { vertical, horizontal } = roadLines();
   const lines = car.axis === 'v' ? vertical : horizontal;
   const roadPos = car.axis === 'v' ? car.x : car.y;
+  void lines; void roadPos;
   // At an intersection, sometimes turn onto the crossing road.
-  const cross = car.axis === 'v' ? horizontal : vertical;
-  const along = car.axis === 'v' ? car.y : car.x;
-  for (const c of cross) {
-    if (Math.abs(along - c) < 6 && random() < 0.004) {
+  const crossing = car.axis === 'v' ? horizontal : vertical;
+  const alongRoad = car.axis === 'v' ? car.y : car.x;
+  for (const c of crossing) {
+    if (Math.abs(alongRoad - c) < 6 && random() < 0.004) {
       car.axis = car.axis === 'v' ? 'h' : 'v';
       car.dir = random() < 0.5 ? 1 : -1;
       car.angle = car.axis === 'v' ? (car.dir > 0 ? Math.PI / 2 : -Math.PI / 2) : (car.dir > 0 ? 0 : Math.PI);
@@ -187,7 +236,7 @@ export function stepTrafficCar(car, dt, city, cars, random) {
   }
 }
 
-/** One step for a police car chasing the player. */
+/** One step for a police car chasing the player. Returns the distance to the target. */
 export function stepPoliceCar(car, target, dt, city, cars) {
   const spec = car.spec;
   const dx = target.x - car.x;
@@ -206,44 +255,8 @@ export function stepPoliceCar(car, target, dt, city, cars) {
   car.siren += dt;
   for (const other of cars) {
     if (other === car) continue;
-    const ox = other.x - car.x;
-    const oy = other.y - car.y;
-    const d = Math.hypot(ox, oy);
-    if (d < CAR.length - 6 && d > 0.01) {
-      const push = (CAR.length - 6 - d) / 2;
-      car.x -= (ox / d) * push;
-      car.y -= (oy / d) * push;
-      other.x += (ox / d) * push;
-      other.y += (oy / d) * push;
-    }
+    pushApart(car, other);
   }
-  return dist;
-}
-
-// ---------------------------------------------------------------------------
-// Air One: the SCPD helicopter. It spawns at 4+ wanted stars, circles the
-// player at a hover offset and keeps the heat from cooling off until it leaves.
-// ---------------------------------------------------------------------------
-
-/** Spawn the helicopter above the player. */
-export function createHelicopter(x, y) {
-  return { x: x + 200, y: y - 260, angle: 0, speed: 0, rotor: 0 };
-}
-
-/** One step: close in, circle, and hold station over the player. */
-export function stepHelicopter(heli, target, dt) {
-  const wantAngle = Math.atan2(target.y - heli.y, target.x - heli.x);
-  let diff = wantAngle - heli.angle;
-  while (diff > Math.PI) diff -= Math.PI * 2;
-  while (diff < -Math.PI) diff += Math.PI * 2;
-  heli.angle += Math.max(-1.2 * dt, Math.min(1.2 * dt, diff));
-  const dx = target.x - heli.x;
-  const dy = target.y - heli.y;
-  const dist = Math.hypot(dx, dy);
-  const speedTarget = dist > 300 ? 260 : dist > 120 ? 160 : 60;
-  heli.speed += (speedTarget - heli.speed) * Math.min(1, 1.2 * dt);
-  heli.x += Math.cos(heli.angle) * heli.speed * dt;
-  heli.y += Math.sin(heli.angle) * heli.speed * dt;
-  heli.rotor += dt * 22;
+  void STEP;
   return dist;
 }

@@ -32,6 +32,7 @@ function autopilotDrive(game, seconds) {
   }
 }
 
+/** Put the player in a fresh car of `kind` at a position and heading. */
 function putPlayerInCar(game, kind, x, y, angle) {
   const car = createCar(kind, x, y, angle, game.random);
   car.parked = false;
@@ -44,6 +45,30 @@ function putPlayerInCar(game, kind, x, y, angle) {
   return car;
 }
 
+/** Set the radio station on the game state and the audio engine together. */
+function setRadio(game, index) {
+  game.radio = index;
+  game.audio.setStation(index);
+}
+
+/**
+ * Park Air One far ahead, over the road the player is driving on: the
+ * chase reads better with the helicopter in the frame, not just in the HUD.
+ * Far ahead it sits below the centred mission banner (the chase camera
+ * looks down, so near things ride high in the frame), and over the road
+ * nothing can hide it behind a building. The road is snapped from the
+ * player's y (horizontal roads run every 400px from y=150). (v2 parked it
+ * at +250/-120, right on the banner; +320/+300 hid it behind Spray & Go;
+ * +420/-260 left it cut off at the top edge; +900/-40 showed it, small.)
+ */
+function parkHeli(game) {
+  if (!game.heli) return;
+  const roadY = Math.round((game.player.y - 150) / 400) * 400 + 150;
+  game.heli.x = game.player.x + 800;
+  game.heli.y = roadY;
+}
+
+/** `count` police cars in a fan behind the player, turned to face them. */
 function addPoliceChase(game, count, baseDist = 260) {
   const player = game.player;
   for (let i = 0; i < count; i += 1) {
@@ -77,6 +102,48 @@ export function stageShot(name, game) {
   game.mission.index = 0;
   game.policeCars = [];
   game.cops = [];
+  if (scene === 'cover') {
+    // A four-star chase through the middle of town, at golden hour, with Air
+    // One overhead. The road ahead is clear now (landmarks sit inside
+    // blocks), so the car actually accelerates; the police start close and
+    // one cuts in ahead, and the autopilot is short so the whole pack stays
+    // in the frame. Leo's car is painted bright red so it reads as the hero.
+    const coverCar = putPlayerInCar(game, 'sport', 1350, 950, 0);
+    coverCar.paint = '#e74c3c';
+    game.player.cash = 1890;
+    game.player.health = 84;
+    game.player.wanted = 4;
+    game.player.weapon = 'pistol';
+    game.player.ammo = { pistol: 18, smg: 60, shotgun: 8 };
+    game.weaponsOwned = ['fists', 'pistol', 'smg'];
+    game.respect = 1600;
+    setRadio(game, 0);
+    game.shotCam = { dist: 230, height: 130, fov: 66 };
+    game.heli = createHelicopter(game.player.x, game.player.y);
+    game.clock = 17 * 60 + 20;
+    game.mission.index = 3;
+    startMission(game.mission, null);
+    game.missionTarget = game.city.places.hideout;
+    game.objectiveText = 'Escape to the Hideout — do not get busted';
+    addPoliceChase(game, 3, 150);
+    addPoliceAhead(game, 300, 120);
+    autopilotDrive(game, 1.2);
+    parkHeli(game);
+    return { screen: 'play' };
+  }
+  if (scene === 'drive') {
+    // Golden-hour cruise down Palm Strip with traffic and pedestrians.
+    putPlayerInCar(game, 'sedan', 950, 2150, -Math.PI / 2);
+    game.player.cash = 860;
+    game.player.health = 100;
+    game.clock = 17 * 60 + 15;
+    game.respect = 100;
+    setRadio(game, 1);
+    game.shotCam = { dist: 280, height: 150, fov: 62 };
+    game.objectiveText = 'Cruise Solmar — next job: Special Delivery';
+    autopilotDrive(game, 3.5);
+    return { screen: 'play' };
+  }
   if (scene === 'mission') {
     // On foot at the Marina, mission 4 briefing live, crew beside Leo.
     game.player.onFoot = true;
@@ -90,8 +157,7 @@ export function stageShot(name, game) {
     game.player.health = 92;
     game.clock = 11 * 60 + 20;
     game.respect = 800;
-    game.radio = 0;
-    game.audio.setStation(0);
+    setRadio(game, 0);
     game.shotCam = { dist: 160, height: 130, fov: 60 };
     game.crew = [
       createCrewMember('Dante', game.player.x - 50, game.player.y + 40, '#e8b98a', '#e74c3c'),
@@ -112,61 +178,16 @@ export function stageShot(name, game) {
     game.player.wanted = 4;
     game.clock = 22 * 60 + 40;
     game.respect = 1600;
-    game.radio = 2;
-    game.audio.setStation(2);
+    setRadio(game, 2);
     game.shotCam = { dist: 300, height: 170, fov: 62 };
     game.heli = createHelicopter(game.player.x, game.player.y);
     addPoliceChase(game, 1, 200);
     game.objectiveText = 'Lose the SCPD — reach Spray & Go';
     game.missionTarget = game.city.places.spray;
     autopilotDrive(game, 1.5);
-    // Park Air One ahead-left of the player: the chase reads better with
-    // the helicopter in the frame, not just in the HUD.
-    if (game.heli) { game.heli.x = game.player.x + 250; game.heli.y = game.player.y - 120; }
+    parkHeli(game);
     return { screen: 'play' };
   }
-  if (scene === 'drive') {
-    // Golden-hour cruise down Palm Strip with traffic and pedestrians.
-    putPlayerInCar(game, 'sedan', 950, 2150, -Math.PI / 2);
-    game.player.cash = 860;
-    game.player.health = 100;
-    game.clock = 17 * 60 + 15;
-    game.respect = 100;
-    game.radio = 1;
-    game.audio.setStation(1);
-    game.shotCam = { dist: 280, height: 150, fov: 62 };
-    game.objectiveText = 'Cruise Solmar — next job: Special Delivery';
-    autopilotDrive(game, 3.5);
-    return { screen: 'play' };
-  }
-  // Cover: a four-star chase through the middle of town, at golden hour,
-  // with Air One overhead. The road ahead is clear now (landmarks sit inside
-  // blocks), so the car actually accelerates; the police start close and one
-  // cuts in ahead, and the autopilot is short so the whole pack stays in
-  // the frame. Leo's car is painted bright red so it reads as the hero.
-  const coverCar = putPlayerInCar(game, 'sport', 1350, 950, 0);
-  coverCar.paint = '#e74c3c';
-  game.player.cash = 1890;
-  game.player.health = 84;
-  game.player.wanted = 4;
-  game.player.weapon = 'pistol';
-  game.player.ammo = { pistol: 18, smg: 60, shotgun: 8 };
-  game.weaponsOwned = ['fists', 'pistol', 'smg'];
-  game.respect = 1600;
-  game.radio = 0;
-  game.audio.setStation(0);
-  game.shotCam = { dist: 230, height: 130, fov: 66 };
-  game.heli = createHelicopter(game.player.x, game.player.y);
-  game.clock = 17 * 60 + 20;
-  game.mission.index = 3;
-  startMission(game.mission, null);
-  game.missionTarget = game.city.places.hideout;
-  game.objectiveText = 'Escape to the Hideout — do not get busted';
-  addPoliceChase(game, 3, 150);
-  addPoliceAhead(game, 300, 120);
-  autopilotDrive(game, 1.2);
-  // Park Air One ahead-left of the player: the chase reads better with
-  // the helicopter in the frame, not just in the HUD.
-  if (game.heli) { game.heli.x = game.player.x + 250; game.heli.y = game.player.y - 120; }
-  return { screen: 'play' };
+  // Unknown scene name: fall back to cover.
+  return stageShot('cover', game);
 }

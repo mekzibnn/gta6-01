@@ -12,21 +12,32 @@ export const ACTION_HANDBRAKE = 32;
 export const ACTION_RADIO = 64;
 export const ACTION_CAMERA = 128;
 
-const UP = new Set(['ArrowUp', 'KeyW']);
-const DOWN = new Set(['ArrowDown', 'KeyS']);
-const LEFT = new Set(['ArrowLeft', 'KeyA']);
-const RIGHT = new Set(['ArrowRight', 'KeyD']);
-const RUN = new Set(['ShiftLeft', 'ShiftRight']);
-const ENTER = new Set(['KeyE']);
-const PUNCH = new Set(['KeyF']);
-const WEAPON = new Set(['KeyQ']);
-const PAUSE = new Set(['KeyP', 'Escape']);
-const CONFIRM = new Set(['Space', 'Enter']);
-const HANDBRAKE = new Set(['Space']);
-const MUTE = new Set(['KeyM']);
-const RADIO = new Set(['KeyR']);
-const CAMERA = new Set(['KeyC']);
-const SLOTS = new Set(['Digit1', 'Digit2', 'Digit3', 'Digit4']);
+// One-shot presses: each physical key maps to at most one action flag.
+// (Space is CONFIRM here; it doubles as the handbrake while held — see the
+// HELD table below. The two roles never clash because press() only queues.)
+const PRESS_ACTIONS = [
+  [['KeyE'], ACTION_ENTER],
+  [['KeyF'], ACTION_PUNCH],
+  [['KeyQ'], ACTION_WEAPON],
+  [['KeyP', 'Escape'], ACTION_PAUSE],
+  [['Space', 'Enter'], ACTION_CONFIRM],
+  [['KeyR'], ACTION_RADIO],
+  [['KeyC'], ACTION_CAMERA],
+  [['KeyM'], 'mute'],
+];
+
+// Held keys: steering, driving, running, handbrake.
+const HELD_KEYS = {
+  up: ['ArrowUp', 'KeyW'],
+  down: ['ArrowDown', 'KeyS'],
+  left: ['ArrowLeft', 'KeyA'],
+  right: ['ArrowRight', 'KeyD'],
+  run: ['ShiftLeft', 'ShiftRight'],
+  handbrake: ['Space'],
+};
+const SLOT_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4'];
+// Keys the page must not scroll or activate on (arrows, Space, Enter).
+const SWALLOW = new Set([...HELD_KEYS.up, ...HELD_KEYS.down, ...HELD_KEYS.left, ...HELD_KEYS.right, 'Space', 'Enter']);
 
 export function createInput(canvas) {
   const keys = new Set();
@@ -38,24 +49,23 @@ export function createInput(canvas) {
   let muted = false;
 
   function press(code) {
-    if (ENTER.has(code)) actions |= ACTION_ENTER;
-    else if (PUNCH.has(code)) actions |= ACTION_PUNCH;
-    else if (WEAPON.has(code)) actions |= ACTION_WEAPON;
-    else if (PAUSE.has(code)) actions |= ACTION_PAUSE;
-    else if (CONFIRM.has(code)) actions |= ACTION_CONFIRM;
-    else if (RADIO.has(code)) actions |= ACTION_RADIO;
-    else if (CAMERA.has(code)) actions |= ACTION_CAMERA;
-    else if (SLOTS.has(code)) slot = Number(code.slice(-1)) - 1;
-    else if (MUTE.has(code)) muted = !muted;
+    for (const [codes, action] of PRESS_ACTIONS) {
+      if (!codes.includes(code)) continue;
+      if (action === 'mute') muted = !muted;
+      else actions |= action;
+      return;
+    }
+    const slotIndex = SLOT_KEYS.indexOf(code);
+    if (slotIndex >= 0) slot = slotIndex;
   }
+
+  const heldOne = (name) => HELD_KEYS[name].some((code) => keys.has(code));
 
   window.addEventListener('keydown', (event) => {
     if (event.repeat) return;
     keys.add(event.code);
     press(event.code);
-    if (UP.has(event.code) || DOWN.has(event.code) || LEFT.has(event.code) || RIGHT.has(event.code) || CONFIRM.has(event.code)) {
-      event.preventDefault();
-    }
+    if (SWALLOW.has(event.code)) event.preventDefault();
   });
   window.addEventListener('keyup', (event) => keys.delete(event.code));
   window.addEventListener('blur', () => keys.clear());
@@ -73,20 +83,15 @@ export function createInput(canvas) {
   });
   window.addEventListener('pointerup', () => { mouseDown = false; });
 
-  const held = (set) => {
-    for (const code of set) if (keys.has(code)) return true;
-    return false;
-  };
-
   return {
     /** Driving / walking axes: -1..1 each. */
     axes() {
-      const x = (held(RIGHT) ? 1 : 0) - (held(LEFT) ? 1 : 0);
-      const y = (held(DOWN) ? 1 : 0) - (held(UP) ? 1 : 0);
+      const x = (heldOne('right') ? 1 : 0) - (heldOne('left') ? 1 : 0);
+      const y = (heldOne('down') ? 1 : 0) - (heldOne('up') ? 1 : 0);
       return { x, y };
     },
-    running() { return held(RUN); },
-    handbrake() { return held(HANDBRAKE) || (actions & ACTION_HANDBRAKE) !== 0; },
+    running() { return heldOne('run'); },
+    handbrake() { return heldOne('handbrake') || (actions & ACTION_HANDBRAKE) !== 0; },
     firing() { return mouseDown; },
     mouse() { return { x: mouseX, y: mouseY, down: mouseDown }; },
     isMuted() { return muted; },

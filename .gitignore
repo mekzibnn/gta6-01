@@ -1,3 +1,6 @@
+# Build output: the dossier generator writes here (out/dossier.json).
 out/
+# Dependencies, if any are ever installed locally.
 node_modules/
+# Local run logs (serve.ts / tooling), never part of the entry.
 *.log

@@ -35,12 +35,19 @@ function star(ctx, x, y, size, filled) {
   ctx.stroke();
 }
 
-export function drawHud(ctx, game) {
-  const { player, mission, clock } = game;
-  ctx.textBaseline = 'alphabetic';
+/** "MM:SS" from a second count. */
+function clockText(seconds) {
+  const t = Math.ceil(seconds);
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+}
 
-  // Top-left: cash + health. Wide enough that the name never spills past
-  // the panel edge (v1 clipped "LEO MARIN" at 250px).
+// ---------------------------------------------------------------------------
+// Top of the screen
+// ---------------------------------------------------------------------------
+
+/** Top-left: cash + health. Wide enough that the name never spills past
+ * the panel edge (v1 clipped "LEO MARIN" at 250px). */
+function drawCashHealth(ctx, player) {
   panel(ctx, 16, 14, 300, 64);
   ctx.fillStyle = '#7dff8a';
   ctx.font = `700 26px ${FONT_DISPLAY}`;
@@ -55,8 +62,10 @@ export function drawHud(ctx, game) {
   ctx.font = `600 12px ${FONT}`;
   ctx.fillText('LEO MARIN', 218, 46);
   ctx.fillText('HEALTH', 218, 66);
+}
 
-  // Respect: rank, progress to the next rank, and the current district.
+/** Respect: rank, progress to the next rank, and the current district. */
+function drawRespect(ctx, game) {
   const rank = respectRank(game.respect || 0);
   const nextRank = RESPECT_RANKS[RESPECT_RANKS.indexOf(rank) + 1];
   panel(ctx, 16, 86, 300, 46);
@@ -74,8 +83,11 @@ export function drawHud(ctx, game) {
   const standing = game.respectByDistrict ? (game.respectByDistrict[districtKey] || 0) : 0;
   ctx.fillText(`${game.district ? game.district.name : 'Central Solmar'}  •  ${standing} pts`, 218, 106);
   ctx.fillText(nextRank ? `Next: ${nextRank.name} (${game.respect}/${nextRank.at})` : 'Top of the city', 218, 120);
+}
 
-  // Top-right: wanted stars, with an Air One warning while the heli is up.
+/** Top-right: wanted stars, with an Air One warning while the heli is up. */
+function drawWanted(ctx, game) {
+  const { player } = game;
   panel(ctx, VIEW.width - 236, 14, 220, game.heli ? 72 : 44);
   ctx.fillStyle = PALETTE.text;
   ctx.font = `700 13px ${FONT}`;
@@ -88,40 +100,49 @@ export function drawHud(ctx, game) {
     ctx.font = `700 14px ${FONT_DISPLAY}`;
     ctx.fillText('AIR ONE OVERHEAD', VIEW.width - 222, 68);
   }
+}
 
-  // Top-centre: current objective.
+/** Top-centre: current objective. */
+function drawObjective(ctx, game) {
   const objective = game.objectiveText;
-  if (objective) {
-    ctx.font = `600 15px ${FONT}`;
-    const w = ctx.measureText(objective).width + 36;
-    panel(ctx, (VIEW.width - w) / 2, 14, w, 34);
-    ctx.fillStyle = PALETTE.mission;
-    ctx.textAlign = 'center';
-    ctx.fillText(objective, VIEW.width / 2, 37);
-    ctx.textAlign = 'left';
-  }
+  if (!objective) return;
+  ctx.font = `600 15px ${FONT}`;
+  const w = ctx.measureText(objective).width + 36;
+  panel(ctx, (VIEW.width - w) / 2, 14, w, 34);
+  ctx.fillStyle = PALETTE.mission;
+  ctx.textAlign = 'center';
+  ctx.fillText(objective, VIEW.width / 2, 37);
+  ctx.textAlign = 'left';
+}
 
-  // Mission timer, under the objective.
+/** Mission timer and street race timer, under the objective. */
+function drawTimers(ctx, game) {
+  const { mission } = game;
   if (mission.active && mission.timer > 0) {
     const t = Math.ceil(mission.timer);
     ctx.font = `700 20px ${FONT_DISPLAY}`;
     ctx.fillStyle = t <= 30 ? '#ff5a4e' : PALETTE.text;
     ctx.textAlign = 'center';
-    ctx.fillText(`${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`, VIEW.width / 2, 74);
+    ctx.fillText(clockText(mission.timer), VIEW.width / 2, 74);
     ctx.textAlign = 'left';
   }
-
-  // Street race timer + checkpoint count, under the objective.
   if (game.race && game.race.active) {
     const t = Math.ceil(game.race.timer);
     ctx.font = `700 20px ${FONT_DISPLAY}`;
     ctx.fillStyle = t <= 30 ? '#ff5a4e' : '#ffd94a';
     ctx.textAlign = 'center';
-    ctx.fillText(`RACE ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}  •  ${game.race.checkpoint + 1}/${RACES.checkpoints.length}`, VIEW.width / 2, 74);
+    ctx.fillText(`RACE ${clockText(game.race.timer)}  •  ${game.race.checkpoint + 1}/${RACES.checkpoints.length}`, VIEW.width / 2, 74);
     ctx.textAlign = 'left';
   }
+}
 
-  // Bottom-left: crew, then weapon slots 1-4 with ammo.
+// ---------------------------------------------------------------------------
+// Bottom of the screen
+// ---------------------------------------------------------------------------
+
+/** Bottom-left: crew, then weapon slots 1-4 with ammo. */
+function drawWeapons(ctx, game) {
+  const { player } = game;
   if (game.crew && game.crew.length > 0) {
     panel(ctx, 16, VIEW.height - 106, 360, 34);
     ctx.fillStyle = '#7dff8a';
@@ -140,8 +161,10 @@ export function drawHud(ctx, game) {
     ctx.fillText(`${i + 1}:${label}`, wx, VIEW.height - 30);
     wx += ctx.measureText(`${i + 1}:${label}`).width + 14;
   }
+}
 
-  // Bottom-centre: the radio station, so the audio has a face.
+/** Bottom-centre: the radio station, so the audio has a face. */
+function drawRadio(ctx, game) {
   const stationName = game.audio && game.audio.stationName ? game.audio.stationName() : 'SOL FM';
   ctx.font = `700 13px ${FONT_DISPLAY}`;
   const rw = ctx.measureText(`♪ ${stationName}`).width + 36;
@@ -150,9 +173,12 @@ export function drawHud(ctx, game) {
   ctx.textAlign = 'center';
   ctx.fillText(`♪ ${stationName}`, VIEW.width / 2, VIEW.height - 30);
   ctx.textAlign = 'left';
+}
 
-  // Bottom-right: speed always (0 on foot) + clock, so every screenshot
-  // reads the same way.
+/** Bottom-right: speed always (0 on foot) + clock, so every screenshot
+ * reads the same way. */
+function drawSpeedClock(ctx, game) {
+  const { player, clock } = game;
   const hours = Math.floor(clock / 60) % 24;
   const minutes = Math.floor(clock % 60);
   const timeText = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
@@ -163,52 +189,71 @@ export function drawHud(ctx, game) {
   const kmh = !player.onFoot && player.car ? Math.round(Math.abs(player.car.speed) * 0.36) : 0;
   ctx.fillText(`${kmh} km/h   ${timeText}`, VIEW.width - 30, VIEW.height - 30);
   ctx.textAlign = 'left';
+}
 
-  // Toast message centre-screen.
-  if (game.toast && game.toastTime > 0) {
-    ctx.font = `700 24px ${FONT_DISPLAY}`;
-    const w = ctx.measureText(game.toast).width + 44;
-    panel(ctx, (VIEW.width - w) / 2, 96, w, 44);
-    ctx.fillStyle = game.toastColor || PALETTE.text;
-    ctx.textAlign = 'center';
-    ctx.fillText(game.toast, VIEW.width / 2, 126);
-    ctx.textAlign = 'left';
-  }
+/** Toast message centre-screen. */
+function drawToast(ctx, game) {
+  if (!game.toast || game.toastTime <= 0) return;
+  ctx.font = `700 24px ${FONT_DISPLAY}`;
+  const w = ctx.measureText(game.toast).width + 44;
+  panel(ctx, (VIEW.width - w) / 2, 96, w, 44);
+  ctx.fillStyle = game.toastColor || PALETTE.text;
+  ctx.textAlign = 'center';
+  ctx.fillText(game.toast, VIEW.width / 2, 126);
+  ctx.textAlign = 'left';
+}
 
-  // Garage menu: pick an upgrade with 1-3, close with E.
-  if (game.garageOpen) {
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillRect(0, 0, VIEW.width, VIEW.height);
-    panel(ctx, VIEW.width / 2 - 260, VIEW.height / 2 - 140, 520, 280);
+/** Garage menu: pick an upgrade with 1-3, close with E. */
+function drawGarage(ctx, game) {
+  if (!game.garageOpen) return;
+  const { player } = game;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0, 0, VIEW.width, VIEW.height);
+  panel(ctx, VIEW.width / 2 - 260, VIEW.height / 2 - 140, 520, 280);
+  ctx.fillStyle = PALETTE.text;
+  ctx.font = `700 26px ${FONT_DISPLAY}`;
+  ctx.textAlign = 'center';
+  ctx.fillText('SOLMAR AUTO GARAGE', VIEW.width / 2, VIEW.height / 2 - 100);
+  ctx.font = `600 15px ${FONT}`;
+  ctx.fillText(`Cash $${player.cash.toLocaleString('en-US')} — press 1 / 2 / 3, E to leave`, VIEW.width / 2, VIEW.height / 2 - 72);
+  const rows = [
+    { key: 'engine', label: 'Engine', level: game.upgrades.engine, list: GARAGE.engine },
+    { key: 'armor', label: 'Armor', level: game.upgrades.armor, list: GARAGE.armor },
+    { key: 'paint', label: 'Paint', level: game.upgrades.paint, list: GARAGE.paints },
+  ];
+  ctx.textAlign = 'left';
+  rows.forEach((row, i) => {
+    const y = VIEW.height / 2 - 40 + i * 44;
+    const next = row.key === 'paint'
+      ? `Next: ${GARAGE.paints[(row.level + 1) % GARAGE.paints.length]} — $200`
+      : row.level >= row.list.length - 1
+        ? 'MAXED OUT'
+        : `Next: ${row.list[row.level + 1].name} — $${row.list[row.level + 1].cost}`;
+    ctx.fillStyle = '#ffd94a';
+    ctx.font = `700 17px ${FONT_DISPLAY}`;
+    ctx.fillText(`${i + 1}. ${row.label}`, VIEW.width / 2 - 240, y);
     ctx.fillStyle = PALETTE.text;
-    ctx.font = `700 26px ${FONT_DISPLAY}`;
-    ctx.textAlign = 'center';
-    ctx.fillText('SOLMAR AUTO GARAGE', VIEW.width / 2, VIEW.height / 2 - 100);
-    ctx.font = `600 15px ${FONT}`;
-    ctx.fillText(`Cash $${player.cash.toLocaleString('en-US')} — press 1 / 2 / 3, E to leave`, VIEW.width / 2, VIEW.height / 2 - 72);
-    const rows = [
-      { key: 'engine', label: 'Engine', level: game.upgrades.engine, list: GARAGE.engine },
-      { key: 'armor', label: 'Armor', level: game.upgrades.armor, list: GARAGE.armor },
-      { key: 'paint', label: 'Paint', level: game.upgrades.paint, list: GARAGE.paints },
-    ];
-    ctx.textAlign = 'left';
-    rows.forEach((row, i) => {
-      const y = VIEW.height / 2 - 40 + i * 44;
-      const next = row.key === 'paint'
-        ? `Next: ${GARAGE.paints[(row.level + 1) % GARAGE.paints.length]} — $200`
-        : row.level >= row.list.length - 1
-          ? 'MAXED OUT'
-          : `Next: ${row.list[row.level + 1].name} — $${row.list[row.level + 1].cost}`;
-      ctx.fillStyle = '#ffd94a';
-      ctx.font = `700 17px ${FONT_DISPLAY}`;
-      ctx.fillText(`${i + 1}. ${row.label}`, VIEW.width / 2 - 240, y);
-      ctx.fillStyle = PALETTE.text;
-      ctx.font = `600 14px ${FONT}`;
-      ctx.fillText(row.key === 'paint' ? `Current: ${GARAGE.paints[row.level]}` : `Level ${row.level} — ${next}`, VIEW.width / 2 - 120, y);
-    });
-    ctx.textAlign = 'left';
-  }
+    ctx.font = `600 14px ${FONT}`;
+    ctx.fillText(row.key === 'paint' ? `Current: ${GARAGE.paints[row.level]}` : `Level ${row.level} — ${next}`, VIEW.width / 2 - 120, y);
+  });
+  ctx.textAlign = 'left';
+}
 
+// ---------------------------------------------------------------------------
+
+export function drawHud(ctx, game) {
+  const { player } = game;
+  ctx.textBaseline = 'alphabetic';
+  drawCashHealth(ctx, player);
+  drawRespect(ctx, game);
+  drawWanted(ctx, game);
+  drawObjective(ctx, game);
+  drawTimers(ctx, game);
+  drawWeapons(ctx, game);
+  drawRadio(ctx, game);
+  drawSpeedClock(ctx, game);
+  drawToast(ctx, game);
+  drawGarage(ctx, game);
   drawMinimap(ctx, game);
 }
 

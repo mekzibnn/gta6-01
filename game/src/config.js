@@ -3,6 +3,7 @@
 // 3400x2600 playfield; the camera follows the player and the renderer scales
 // the 1280x720 logical view to the window, so no rule depends on screen size.
 
+// -- World & view -----------------------------------------------------------
 export const VIEW = { width: 1280, height: 720 };
 export const WORLD = { width: 3400, height: 2600 };
 export const STEP = 1 / 60;
@@ -19,6 +20,7 @@ export const CITY = {
   portX: 2980,
 };
 
+// -- Actors -----------------------------------------------------------------
 export const PLAYER = {
   radius: 13,
   walkSpeed: 170,
@@ -29,6 +31,19 @@ export const PLAYER = {
   punchArc: 1.1,
 };
 
+export const PED = { count: 46, walkSpeed: 55, fleeSpeed: 150 };
+
+export const TRAFFIC = { count: 22, cruise: 150 };
+
+export const POLICE = {
+  carSight: 560,
+  footSpeed: 185,
+  punchDamage: 8,
+  shootAtStars: 3,
+  bustRadius: 26,
+};
+
+// -- Cars -------------------------------------------------------------------
 export const CAR = {
   length: 54,
   width: 26,
@@ -43,6 +58,7 @@ export const CAR = {
   },
 };
 
+// -- Wanted & the law -------------------------------------------------------
 export const WANTED = {
   max: 5,
   decaySeconds: 14,
@@ -53,23 +69,21 @@ export const WANTED = {
   healCost: 80,
 };
 
-export const POLICE = {
-  carSight: 560,
-  footSpeed: 185,
-  punchDamage: 8,
-  shootAtStars: 3,
-  bustRadius: 26,
+/** Air One: the SCPD helicopter that joins the chase at 4+ stars. */
+export const HELI = {
+  minStars: 4,
+  hoverHeight: 190,
+  followDist: 260,
+  searchlight: true,
 };
 
-export const PED = { count: 46, walkSpeed: 55, fleeSpeed: 150 };
-
-export const TRAFFIC = { count: 22, cruise: 150 };
-
+// -- Economy ----------------------------------------------------------------
 export const MISSION_REWARD = [400, 650, 900, 1400, 2500, 1800, 2200, 4000];
 export const TAXI_FARE = 120;
 export const PACKAGE_BONUS = 100;
 export const HIDDEN_PACKAGES = 10;
 
+// -- Progression ------------------------------------------------------------
 /** Respect: progression that rewards play. Ranks unlock the crew (1500+). */
 export const RESPECT_RANKS = [
   { at: 0, name: 'Nobody' },
@@ -82,14 +96,6 @@ export const RESPECT_MISSION = 120;
 export const RESPECT_RACE = 150;
 export const RESPECT_TAXI = 10;
 export const RESPECT_PACKAGE = 15;
-
-/** Air One: the SCPD helicopter that joins the chase at 4+ stars. */
-export const HELI = {
-  minStars: 4,
-  hoverHeight: 190,
-  followDist: 260,
-  searchlight: true,
-};
 
 /** Radio: three WebAudio stations, switched with R while driving. */
 export const RADIO = {
@@ -133,6 +139,7 @@ export const RACES = {
 
 export const SAVE_KEY = 'solmar-heat.save.v2';
 
+// -- Look -------------------------------------------------------------------
 export const PALETTE = {
   asphalt: '#3d3a38',
   asphaltLine: '#d8c56a',

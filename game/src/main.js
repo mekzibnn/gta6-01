@@ -39,6 +39,37 @@ function announce(message) {
   statusEl.textContent = message;
 }
 
+/** Is the player within `radius` of a named place? */
+function nearPlace(game, key, radius) {
+  const place = game.city.places[key];
+  return Math.hypot(game.player.x - place.x, game.player.y - place.y) < radius;
+}
+
+/** The nearest taxi-waiting pedestrian in range, or undefined. */
+function nearestTaxiPed(game) {
+  const player = game.player;
+  return game.peds.find((p) => p.taxi && p.health > 0 && Math.hypot(p.x - player.x, p.y - player.y) < 60);
+}
+
+/** 0 by day, 1 at night, ramping through golden hour (17:30-20:30) and dawn. */
+function nightFactorFor(clock) {
+  const hour = (clock / 60) % 24;
+  if (hour >= 20.5 || hour < 6) return 1;
+  if (hour >= 7.5 && hour < 17.5) return 0;
+  if (hour >= 17.5 && hour < 20.5) return (hour - 17.5) / 3;
+  return 1 - (hour - 6) / 1.5;
+}
+
+function setToast(game, text, seconds, color) {
+  game.toast = text;
+  game.toastTime = seconds || 3;
+  game.toastColor = color || '';
+}
+
+// ---------------------------------------------------------------------------
+// World creation
+// ---------------------------------------------------------------------------
+
 function createGame(seedValue) {
   const random = createRandom(seedValue);
   const city = buildCity(random);
@@ -94,11 +125,9 @@ function createGame(seedValue) {
   return game;
 }
 
-function setToast(game, text, seconds, color) {
-  game.toast = text;
-  game.toastTime = seconds || 3;
-  game.toastColor = color || '';
-}
+// ---------------------------------------------------------------------------
+// Respect
+// ---------------------------------------------------------------------------
 
 /** Respect rank name for a respect total. */
 export function respectRankName(respect) {
@@ -117,6 +146,67 @@ function awardRespect(game, amount, announceIt) {
   if (announceIt && after !== before) {
     setToast(game, `RESPECT UP — you are now ${after.toUpperCase()}`, 4, '#ffd94a');
     game.audio.missionDone();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The wanted system: heat, police cars, foot cops, Air One
+// ---------------------------------------------------------------------------
+
+function raiseWanted(game, amount) {
+  const player = game.player;
+  if (player.wanted >= WANTED.max) return;
+  player.wanted = Math.min(WANTED.max, player.wanted + amount);
+  player.wantedTimer = 0;
+  game.audio.wantedUp();
+  setToast(game, `WANTED — ${'★'.repeat(player.wanted)}`, 2.5, '#ff5a4e');
+  announce(`Wanted level ${player.wanted}.`);
+}
+
+function policeTargetCount(wanted) {
+  return WANTED.chaseCars[Math.min(WANTED.max, wanted)];
+}
+
+function maintainPolice(game, dt) {
+  const player = game.player;
+  const wanted = player.wanted;
+  const wantCars = policeTargetCount(wanted);
+  // Spawn police cars on roads near the player, off-screen.
+  if (game.policeCars.length < wantCars) {
+    const road = nearestRoadPoint(player.x + (Math.random() < 0.5 ? -750 : 750), player.y + (Math.random() < 0.5 ? -550 : 550));
+    const car = createCar('police', road.x, road.y, 0, game.random);
+    car.speed = 300;
+    game.policeCars.push(car);
+  }
+  // Despawn far ones.
+  game.policeCars = game.policeCars.filter((car) => Math.hypot(car.x - player.x, car.y - player.y) < 1400);
+  // Foot cops when the player is on foot and wanted.
+  const wantCops = player.onFoot ? Math.min(3, wanted) : 0;
+  if (game.cops.length < wantCops) {
+    const angle = Math.random() * Math.PI * 2;
+    game.cops.push(spawnCop(player.x + Math.cos(angle) * 420, player.y + Math.sin(angle) * 420));
+  }
+  game.cops = game.cops.filter((cop) => cop.health > 0 && Math.hypot(cop.x - player.x, cop.y - player.y) < 900);
+  void dt;
+}
+
+function updateWanted(game, dt) {
+  const player = game.player;
+  if (player.wanted <= 0) return;
+  let near = false;
+  for (const car of game.policeCars) if (Math.hypot(car.x - player.x, car.y - player.y) < 550) near = true;
+  for (const cop of game.cops) if (Math.hypot(cop.x - player.x, cop.y - player.y) < 400) near = true;
+  // Air One watches from above: no cooling off while the heli is up.
+  if (game.heli) near = true;
+  if (near) {
+    player.wantedTimer = 0;
+    return;
+  }
+  player.wantedTimer += dt;
+  if (player.wantedTimer >= WANTED.decaySeconds) {
+    player.wanted -= 1;
+    player.wantedTimer = 0;
+    setToast(game, 'Heat dying down…', 2);
   }
 }
 
@@ -147,22 +237,16 @@ function maintainCrew(game, dt) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Cars: entering, exiting, particles
+// ---------------------------------------------------------------------------
+
 function spawnParticles(game, x, y, color, count, speed) {
   for (let i = 0; i < count; i += 1) {
     const a = Math.random() * Math.PI * 2;
     const v = (speed || 120) * (0.4 + Math.random() * 0.8);
     game.particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.6 + Math.random() * 0.4, color, size: 2 + Math.random() * 3 });
   }
-}
-
-function raiseWanted(game, amount) {
-  const player = game.player;
-  if (player.wanted >= WANTED.max) return;
-  player.wanted = Math.min(WANTED.max, player.wanted + amount);
-  player.wantedTimer = 0;
-  game.audio.wantedUp();
-  setToast(game, `WANTED — ${'★'.repeat(player.wanted)}`, 2.5, '#ff5a4e');
-  announce(`Wanted level ${player.wanted}.`);
 }
 
 function nearestCar(game, x, y, maxDist) {
@@ -225,60 +309,9 @@ function exitCar(game) {
   game.audio.door();
 }
 
-function policeTargetCount(wanted) {
-  return WANTED.chaseCars[Math.min(WANTED.max, wanted)];
-}
-
-function maintainPolice(game, dt) {
-  const player = game.player;
-  const wanted = player.wanted;
-  const wantCars = policeTargetCount(wanted);
-  // Spawn police cars on roads near the player, off-screen.
-  if (game.policeCars.length < wantCars) {
-    const road = nearestRoadPoint(player.x + (Math.random() < 0.5 ? -750 : 750), player.y + (Math.random() < 0.5 ? -550 : 550));
-    const car = createCar('police', road.x, road.y, 0, game.random);
-    car.speed = 300;
-    game.policeCars.push(car);
-  }
-  // Despawn far ones.
-  game.policeCars = game.policeCars.filter((car) => Math.hypot(car.x - player.x, car.y - player.y) < 1400);
-  // Foot cops when the player is on foot and wanted.
-  const wantCops = player.onFoot ? Math.min(3, wanted) : 0;
-  if (game.cops.length < wantCops) {
-    const angle = Math.random() * Math.PI * 2;
-    game.cops.push(spawnCop(player.x + Math.cos(angle) * 420, player.y + Math.sin(angle) * 420));
-  }
-  game.cops = game.cops.filter((cop) => cop.health > 0 && Math.hypot(cop.x - player.x, cop.y - player.y) < 900);
-  void dt;
-}
-
-function updateWanted(game, dt) {
-  const player = game.player;
-  if (player.wanted <= 0) return;
-  let near = false;
-  for (const car of game.policeCars) if (Math.hypot(car.x - player.x, car.y - player.y) < 550) near = true;
-  for (const cop of game.cops) if (Math.hypot(cop.x - player.x, cop.y - player.y) < 400) near = true;
-  // Air One watches from above: no cooling off while the heli is up.
-  if (game.heli) near = true;
-  if (near) {
-    player.wantedTimer = 0;
-    return;
-  }
-  player.wantedTimer += dt;
-  if (player.wantedTimer >= WANTED.decaySeconds) {
-    player.wanted -= 1;
-    player.wantedTimer = 0;
-    setToast(game, 'Heat dying down…', 2);
-  }
-}
-
-function nightFactorFor(clock) {
-  const hour = (clock / 60) % 24;
-  if (hour >= 20.5 || hour < 6) return 1;
-  if (hour >= 7.5 && hour < 17.5) return 0;
-  if (hour >= 17.5 && hour < 20.5) return (hour - 17.5) / 3;
-  return 1 - (hour - 6) / 1.5;
-}
+// ---------------------------------------------------------------------------
+// The objective line
+// ---------------------------------------------------------------------------
 
 function updateObjective(game) {
   const player = game.player;
@@ -287,34 +320,33 @@ function updateObjective(game) {
   if (player.onFoot) {
     const car = nearestCar(game, player.x, player.y, 55);
     if (car) { game.objectiveText = 'Press E to steal the car'; game.missionTarget = null; return; }
-    if (Math.hypot(player.x - game.city.places.gunshop.x, player.y - game.city.places.gunshop.y) < 90) {
+    if (nearPlace(game, 'gunshop', 90)) {
       game.objectiveText = 'Press E — buy ammo $40 (El Gato Guns)';
       return;
     }
-    if (Math.hypot(player.x - game.city.places.clinic.x, player.y - game.city.places.clinic.y) < 90) {
+    if (nearPlace(game, 'clinic', 90)) {
       game.objectiveText = 'Press E — heal up $80 (Clinica Sol)';
       return;
     }
-    if (Math.hypot(player.x - game.city.places.race.x, player.y - game.city.places.race.y) < 110) {
+    if (nearPlace(game, 'race', 110)) {
       game.objectiveText = 'Press E — street race, 3 checkpoints, $500';
       return;
     }
-    const taxiPed = game.peds.find((p) => p.taxi && p.health > 0 && Math.hypot(p.x - player.x, p.y - player.y) < 60);
-    if (taxiPed) { game.objectiveText = 'A fare is waiting — get in a car'; return; }
+    if (nearestTaxiPed(game)) { game.objectiveText = 'A fare is waiting — get in a car'; return; }
   } else {
-    if (player.wanted > 0 && Math.hypot(player.x - game.city.places.spray.x, player.y - game.city.places.spray.y) < 110) {
+    if (player.wanted > 0 && nearPlace(game, 'spray', 110)) {
       game.objectiveText = 'Press E — respray $150, lose the heat';
       return;
     }
-    if (Math.hypot(player.x - game.city.places.garage.x, player.y - game.city.places.garage.y) < 110) {
+    if (nearPlace(game, 'garage', 110)) {
       game.objectiveText = "Press E — Mara's Garage: engine, armor, paint";
       return;
     }
-    if (Math.hypot(player.x - game.city.places.race.x, player.y - game.city.places.race.y) < 110) {
+    if (nearPlace(game, 'race', 110)) {
       game.objectiveText = 'Press E — street race, 3 checkpoints, $500';
       return;
     }
-    const taxiPed = game.peds.find((p) => p.taxi && p.health > 0 && Math.hypot(p.x - player.x, p.y - player.y) < 60);
+    const taxiPed = nearestTaxiPed(game);
     if (taxiPed) {
       game.objectiveText = 'TAXI! Press E to pick up the fare';
       game.taxiCustomer = taxiPed;
@@ -348,6 +380,10 @@ function updateObjective(game) {
   game.missionTarget = null;
 }
 
+// ---------------------------------------------------------------------------
+// The E key: shops, race flag, taxi, garage, spray, entering / exiting
+// ---------------------------------------------------------------------------
+
 function handleEnter(game) {
   const player = game.player;
   const city = game.city;
@@ -356,7 +392,7 @@ function handleEnter(game) {
     return;
   }
   // Street race flag: on foot or in a car, the race starts here.
-  if (Math.hypot(player.x - city.places.race.x, player.y - city.places.race.y) < 110) {
+  if (nearPlace(game, 'race', 110)) {
     if (!game.race.active) {
       const first = startRace(game.race, player, city, game.random);
       setToast(game, `STREET RACE — reach ${first.label} first!`, 3, '#ffd94a');
@@ -365,7 +401,7 @@ function handleEnter(game) {
     return;
   }
   // Shops first.
-  if (Math.hypot(player.x - city.places.gunshop.x, player.y - city.places.gunshop.y) < 90) {
+  if (nearPlace(game, 'gunshop', 90)) {
     // Buy ammo for the current weapon, or the weapon itself (3/4 at the shop).
     const spec = WEAPONS[player.weapon];
     if (player.weapon !== 'fists' && player.cash >= WANTED.ammoCost) {
@@ -378,7 +414,7 @@ function handleEnter(game) {
     } else setToast(game, 'Not enough cash for ammo', 2);
     return;
   }
-  if (Math.hypot(player.x - city.places.clinic.x, player.y - city.places.clinic.y) < 90) {
+  if (nearPlace(game, 'clinic', 90)) {
     if (player.cash >= WANTED.healCost) {
       player.cash -= WANTED.healCost;
       player.health = 100;
@@ -395,14 +431,14 @@ function handleEnterInCar(game) {
   const player = game.player;
   const city = game.city;
   // Mara's Garage: upgrades for the car you are driving.
-  if (Math.hypot(player.x - city.places.garage.x, player.y - city.places.garage.y) < 110) {
+  if (nearPlace(game, 'garage', 110)) {
     game.garageOpen = true;
     game.audio.blip();
     announce("Mara's Garage. 1 engine, 2 armor, 3 paint, E to leave.");
     return;
   }
   // Street race flag from the driver's seat.
-  if (Math.hypot(player.x - city.places.race.x, player.y - city.places.race.y) < 110) {
+  if (nearPlace(game, 'race', 110)) {
     if (!game.race.active) {
       const first = startRace(game.race, player, city, game.random);
       setToast(game, `STREET RACE — reach ${first.label} first!`, 3, '#ffd94a');
@@ -411,7 +447,7 @@ function handleEnterInCar(game) {
     return;
   }
   // Spray shop clears the heat.
-  if (player.wanted > 0 && Math.hypot(player.x - city.places.spray.x, player.y - city.places.spray.y) < 110) {
+  if (player.wanted > 0 && nearPlace(game, 'spray', 110)) {
     if (player.cash >= WANTED.sprayCost) {
       player.cash -= WANTED.sprayCost;
       player.wanted = 0;
@@ -424,7 +460,7 @@ function handleEnterInCar(game) {
     } else setToast(game, 'Respray costs $150', 2);
     return;
   }
-  const taxiPed = game.peds.find((p) => p.taxi && p.health > 0 && Math.hypot(p.x - player.x, p.y - player.y) < 60);
+  const taxiPed = nearestTaxiPed(game);
   if (taxiPed) {
     taxiPed.health = 0;
     const dest = startTaxi(game.mission, player, city, game.random);
@@ -434,6 +470,59 @@ function handleEnterInCar(game) {
   }
   exitCar(game);
 }
+
+/** Buy the next garage upgrade (1 engine, 2 armor, 3 paint) for the current car. */
+function buyUpgrade(game, kind) {
+  const player = game.player;
+  if (kind === 'paint') {
+    if (player.cash < 200) { setToast(game, 'Paint costs $200', 2); return; }
+    player.cash -= 200;
+    game.upgrades.paint = (game.upgrades.paint + 1) % GARAGE.paints.length;
+    if (player.car) player.car.paint = GARAGE.paints[game.upgrades.paint];
+    game.audio.coin();
+    setToast(game, 'Fresh paint — looking sharp', 2);
+    saveGame(game);
+    return;
+  }
+  const list = GARAGE[kind];
+  const level = game.upgrades[kind];
+  if (level >= list.length - 1) { setToast(game, `${kind === 'engine' ? 'Engine' : 'Armor'} is maxed out`, 2); return; }
+  const next = list[level + 1];
+  if (player.cash < next.cost) { setToast(game, `${next.name} costs $${next.cost}`, 2); return; }
+  player.cash -= next.cost;
+  game.upgrades[kind] = level + 1;
+  game.audio.coin();
+  setToast(game, `${next.name} installed`, 2.5);
+  saveGame(game);
+}
+
+function respawn(game, kind) {
+  const player = game.player;
+  player.health = 100;
+  player.cash = Math.max(0, player.cash - 200);
+  player.wanted = 0;
+  player.wantedTimer = 0;
+  player.bustTimer = 0;
+  game.policeCars = [];
+  game.cops = [];
+  game.heli = null;
+  game.garageOpen = false;
+  if (player.car) {
+    player.car.speed = 0;
+    player.car = null;
+  }
+  player.onFoot = true;
+  const spot = kind === 'wasted' ? game.city.places.clinic : game.city.places.hideout;
+  player.x = spot.x;
+  player.y = spot.y;
+  player.angle = -Math.PI / 2;
+  failMission(game.mission);
+  game.audio.busted();
+}
+
+// ---------------------------------------------------------------------------
+// One fixed step of the game. Returns 'busted' | 'wasted' | 'win' or null.
+// ---------------------------------------------------------------------------
 
 function stepGame(game, input, dt) {
   const player = game.player;
@@ -474,7 +563,7 @@ function stepGame(game, input, dt) {
   const slot = input.takeSlot();
   if (slot >= 0 && slot < WEAPON_ORDER.length) {
     const name = WEAPON_ORDER[slot];
-    const nearShop = Math.hypot(player.x - game.city.places.gunshop.x, player.y - game.city.places.gunshop.y) < 90;
+    const nearShop = nearPlace(game, 'gunshop', 90);
     if (!game.weaponsOwned.includes(name) && nearShop && player.cash >= WEAPONS[name].cost) {
       player.cash -= WEAPONS[name].cost;
       game.weaponsOwned.push(name);
@@ -689,59 +778,15 @@ function stepGame(game, input, dt) {
   return null;
 }
 
-function respawn(game, kind) {
-  const player = game.player;
-  player.health = 100;
-  player.cash = Math.max(0, player.cash - 200);
-  player.wanted = 0;
-  player.wantedTimer = 0;
-  player.bustTimer = 0;
-  game.policeCars = [];
-  game.cops = [];
-  game.heli = null;
-  game.garageOpen = false;
-  if (player.car) {
-    player.car.speed = 0;
-    player.car = null;
-  }
-  player.onFoot = true;
-  const spot = kind === 'wasted' ? game.city.places.clinic : game.city.places.hideout;
-  player.x = spot.x;
-  player.y = spot.y;
-  player.angle = -Math.PI / 2;
-  failMission(game.mission);
-  game.audio.busted();
-}
-
-/** Buy the next garage upgrade (1 engine, 2 armor, 3 paint) for the current car. */
-function buyUpgrade(game, kind) {
-  const player = game.player;
-  if (kind === 'paint') {
-    if (player.cash < 200) { setToast(game, 'Paint costs $200', 2); return; }
-    player.cash -= 200;
-    game.upgrades.paint = (game.upgrades.paint + 1) % GARAGE.paints.length;
-    if (player.car) player.car.paint = GARAGE.paints[game.upgrades.paint];
-    game.audio.coin();
-    setToast(game, 'Fresh paint — looking sharp', 2);
-    saveGame(game);
-    return;
-  }
-  const list = GARAGE[kind];
-  const level = game.upgrades[kind];
-  if (level >= list.length - 1) { setToast(game, `${kind === 'engine' ? 'Engine' : 'Armor'} is maxed out`, 2); return; }
-  const next = list[level + 1];
-  if (player.cash < next.cost) { setToast(game, `${next.name} costs $${next.cost}`, 2); return; }
-  player.cash -= next.cost;
-  game.upgrades[kind] = level + 1;
-  game.audio.coin();
-  setToast(game, `${next.name} installed`, 2.5);
-  saveGame(game);
-}
+// ---------------------------------------------------------------------------
+// Screenshot mode and the main loop
+// ---------------------------------------------------------------------------
 
 function runShot(name) {
   const game = createGame(seed);
   const renderer = createRenderer(canvas, hudCanvas);
   game.renderer = renderer;
+  window.__game = game;
   const scene = stageShot(name, game);
   game.nightFactor = nightFactorFor(game.clock);
   // Snap the chase camera onto the player at once: the lerped camera would
