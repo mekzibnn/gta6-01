@@ -4,6 +4,7 @@
 import { CAR, CITY, WORLD, STEP } from './config.js';
 import { groundAt, isOnRoad, resolveCircle, roadLines } from './city.js';
 import { pick, range } from './random.js';
+import { upgradeMultipliers, NITRO } from './upgrades.js';
 
 /** Angle difference wrapped to [-PI, PI]. */
 function angleDiff(a, b) {
@@ -148,15 +149,21 @@ export function spawnTrafficCar(random) {
 // ---------------------------------------------------------------------------
 
 /** One physics step for a driven car. Returns 'crash' when it hits something hard.
- * `upgrades` is the garage state ({engine, armor, paint}); engine raises top
- * speed and acceleration, armor softens crashes. */
+ * `upgrades` is the garage state ({engine, armor, paint, nitro}); the
+ * multipliers come from the shop catalogue, and a burning nitro charge
+ * lifts the top speed while it lasts. */
 export function stepDrivenCar(car, input, dt, city, cars, upgrades) {
   const spec = car.spec;
-  const eng = (upgrades && upgrades.engine) || 0;
-  const armor = (upgrades && upgrades.armor) || 0;
-  const topMul = [1, 1.15, 1.3][eng] || 1;
-  const accMul = [1, 1.2, 1.4][eng] || 1;
-  const resist = [1, 0.6, 0.35][armor] || 1;
+  const mult = upgradeMultipliers(upgrades);
+  let topMul = mult.top;
+  let accMul = mult.accel;
+  const resist = mult.resist;
+  // Nitro: a burning charge lifts the top speed while it lasts.
+  if (car.nitro > 0) {
+    car.nitro -= dt;
+    topMul *= NITRO.boost;
+    accMul *= 1.3;
+  }
   const ground = groundAt(car.x, car.y);
   const surface = ground === 'road' ? 1 : ground === 'sand' ? 0.55 : 0.75;
   const accel = input.y < 0 ? spec.accel * accMul : input.y > 0 ? -spec.brake : 0;

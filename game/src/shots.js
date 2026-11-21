@@ -6,7 +6,8 @@
 // drawn by hand.
 import { STEP, WORLD } from './config.js';
 import { stepDrivenCar, stepTrafficCar, stepPoliceCar, createCar, createHelicopter, stepHelicopter } from './vehicles.js';
-import { stepPed, createCrewMember } from './actors.js';
+import { createCrewMember } from './actors.js';
+import { stepPeds } from './peds.js';
 import { startMission } from './missions.js';
 
 /** Drive straight along the current road for a while. */
@@ -27,7 +28,8 @@ function autopilotDrive(game, seconds) {
       stepPoliceCar(car, player, STEP, game.city, game.cars);
     }
     if (game.heli) stepHelicopter(game.heli, player, STEP);
-    for (const ped of game.peds) stepPed(ped, STEP, game.city, null);
+    // The crowd walks its sidewalk routes and runs from the chase.
+    stepPeds(game, STEP);
     game.time += STEP;
   }
 }
@@ -132,8 +134,13 @@ export function stageShot(name, game) {
     return { screen: 'play' };
   }
   if (scene === 'drive') {
-    // Golden-hour cruise down Palm Strip with traffic and pedestrians.
-    putPlayerInCar(game, 'sedan', 950, 2150, -Math.PI / 2);
+    // Golden-hour cruise down Palm Strip in a garage-tuned sport car:
+    // Race engine, plated body, sunset-orange paint, two nitro charges in
+    // the boot — the upgrade shop's work, on show. Traffic and pedestrians
+    // keep the street alive around it.
+    const cruise = putPlayerInCar(game, 'sport', 950, 2150, -Math.PI / 2);
+    cruise.paint = '#ff7a3d';
+    game.upgrades = { engine: 2, armor: 1, paint: 7, nitro: 2 };
     game.player.cash = 860;
     game.player.health = 100;
     game.clock = 17 * 60 + 15;
@@ -145,14 +152,14 @@ export function stageShot(name, game) {
     return { screen: 'play' };
   }
   if (scene === 'mission') {
-    // On foot at the Marina, mission 4 briefing live, crew beside Leo.
+    // On foot at Portside Bank, Smuggler's Run (mission 9) live: the first
+    // drop is a pickup here, and the crew is beside Leo. Facing the bank
+    // puts the landmark and the objective marker in the frame.
     game.player.onFoot = true;
     game.player.car = null;
-    game.player.x = game.city.places.marina.x + 60;
-    game.player.y = game.city.places.marina.y + 40;
-    // Face west toward the Marina and the sea: the backdrop is water and
-    // the marina, not a blank building facade.
-    game.player.angle = Math.PI;
+    game.player.x = game.city.places.portbank.x - 60;
+    game.player.y = game.city.places.portbank.y + 40;
+    game.player.angle = 0;
     game.player.cash = 1250;
     game.player.health = 92;
     game.clock = 11 * 60 + 20;
@@ -163,16 +170,20 @@ export function stageShot(name, game) {
       createCrewMember('Dante', game.player.x - 50, game.player.y + 40, '#e8b98a', '#e74c3c'),
       createCrewMember('Rosa', game.player.x + 40, game.player.y - 60, '#f1c27d', '#2ecc71'),
     ];
-    game.mission.index = 3;
+    game.mission.index = 8;
     startMission(game.mission, null);
-    game.missionTarget = game.city.places.marina;
-    game.objectiveText = 'Pick up the cargo at the Marina';
+    game.missionTarget = game.city.places.portbank;
+    game.objectiveText = 'Smuggler\'s Run — pick up the package at Portside Bank';
     autopilotDrive(game, 0.5);
     return { screen: 'play' };
   }
   if (scene === 'night') {
-    // Downtown at night, headlights on, Air One circling overhead.
-    putPlayerInCar(game, 'sport', 1750, 1350, 0);
+    // Downtown at night, headlights on, streetlamps lit, Air One circling
+    // overhead — and a nitro charge burning in the sport car, so the chase
+    // leaves a spark trail behind it.
+    const nightCar = putPlayerInCar(game, 'sport', 1750, 1350, 0);
+    nightCar.nitro = 1.2;
+    game.upgrades = { engine: 1, armor: 0, paint: 0, nitro: 1 };
     game.player.cash = 2340;
     game.player.health = 78;
     game.player.wanted = 4;

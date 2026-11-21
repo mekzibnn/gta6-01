@@ -10,8 +10,15 @@ cars, story, art, sound and music.
 
 You are Leo Marin, a courier pulled into fixer Mara's jobs across a
 sun-soaked coastal city. Drive and steal cars, outrun the SCPD wanted
-system, run eight story missions, pick up taxi fares, and find ten hidden
+system, run ten story missions, pick up taxi fares, and find ten hidden
 packages — on foot and behind the wheel.
+
+v3 adds a garage upgrade shop (engines, armor, paint, nitro boosts bought
+with cash and saved), a day/night cycle (streetlamps and headlights after
+dark, fares pay more at night), pedestrians who walk the sidewalks and run
+from police chases, and two new jobs: Smuggler's Run, a timed multi-drop
+delivery under rising police heat, and Heat Wave, a five-star chase you
+survive by reaching the hideout.
 
 ## How to play
 
@@ -25,8 +32,10 @@ request, no build step. The city renders in full 3D (three.js, vendored in
   Clinica Sol), pick up taxi fares, open the garage
 - **F** — punch · **Q** — cycle weapons · **1–4** — weapon slots (buy guns
   at El Gato Guns) · **mouse** — aim, click to shoot
-- **R** — change radio station · **C** — chase / high camera
-- **P / Esc** — pause · **M** — mute
+- **N** — nitro boost (stock charges at the garage, slot 4) · **R** — change
+  radio station · **C** — chase / high camera
+- In the garage (keys 1–5): engine, armor, paint, nitro, or sell the car to
+  the chop shop · **P / Esc** — pause · **M** — mute
 
 Progress saves to localStorage on mission complete and on pause.
 

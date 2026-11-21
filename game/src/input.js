@@ -11,6 +11,7 @@ export const ACTION_WEAPON = 16;
 export const ACTION_HANDBRAKE = 32;
 export const ACTION_RADIO = 64;
 export const ACTION_CAMERA = 128;
+export const ACTION_NITRO = 256;
 
 // One-shot presses: each physical key maps to at most one action flag.
 // (Space is CONFIRM here; it doubles as the handbrake while held — see the
@@ -23,6 +24,7 @@ const PRESS_ACTIONS = [
   [['Space', 'Enter'], ACTION_CONFIRM],
   [['KeyR'], ACTION_RADIO],
   [['KeyC'], ACTION_CAMERA],
+  [['KeyN'], ACTION_NITRO],
   [['KeyM'], 'mute'],
 ];
 
@@ -35,7 +37,7 @@ const HELD_KEYS = {
   run: ['ShiftLeft', 'ShiftRight'],
   handbrake: ['Space'],
 };
-const SLOT_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4'];
+const SLOT_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'];
 // Keys the page must not scroll or activate on (arrows, Space, Enter).
 const SWALLOW = new Set([...HELD_KEYS.up, ...HELD_KEYS.down, ...HELD_KEYS.left, ...HELD_KEYS.right, 'Space', 'Enter']);
 

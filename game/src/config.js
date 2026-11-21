@@ -78,7 +78,7 @@ export const HELI = {
 };
 
 // -- Economy ----------------------------------------------------------------
-export const MISSION_REWARD = [400, 650, 900, 1400, 2500, 1800, 2200, 4000];
+export const MISSION_REWARD = [400, 650, 900, 1400, 2500, 1800, 2200, 4000, 3200, 5000];
 export const TAXI_FARE = 120;
 export const PACKAGE_BONUS = 100;
 export const HIDDEN_PACKAGES = 10;
@@ -121,13 +121,31 @@ export const GARAGE = {
     { name: 'Stock engine', cost: 0, top: 1.0, accel: 1.0 },
     { name: 'Tuned engine', cost: 800, top: 1.15, accel: 1.2 },
     { name: 'Race engine', cost: 1600, top: 1.3, accel: 1.4 },
+    { name: 'Street King engine', cost: 2600, top: 1.45, accel: 1.6 },
   ],
   armor: [
     { name: 'No armor', cost: 0, resist: 1.0 },
     { name: 'Plated body', cost: 700, resist: 0.6 },
     { name: 'Armored hull', cost: 1400, resist: 0.35 },
+    { name: 'Military hull', cost: 2200, resist: 0.2 },
   ],
-  paints: ['#c94f43', '#2f7fd0', '#f2b705', '#43a85a', '#8a6fbf', '#e8e2d4', '#20242c'],
+  paints: ['#c94f43', '#2f7fd0', '#f2b705', '#43a85a', '#8a6fbf', '#e8e2d4', '#20242c', '#ff7a3d', '#3ddbd9'],
+};
+
+/** Day/night: the clock's pace and what the night pays. */
+export const DAYNIGHT = {
+  // Game-minutes per real second: a full day takes ~48 minutes of play.
+  timeScale: 0.5,
+  // Night fares pay half as much again (the streets are emptier, the risk higher).
+  nightFareBonus: 0.5,
+  // Heat decays slower after dark: the night holds a wanted level longer.
+  nightDecaySlow: 0.5,
+};
+
+/** Smuggler's Run: each drop pays on the spot and raises the heat by one star. */
+export const SMUGGLE = {
+  dropBonus: 150,
+  dropHeat: 1,
 };
 
 /** Street races: 3 checkpoints, timed. Started at the Palm Strip flag. */

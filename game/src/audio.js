@@ -227,5 +227,14 @@ export function createAudio() {
       [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => playTone(f, 0.22, 'triangle', 0.2), i * 110));
     },
     busted() { [392, 330, 262].forEach((f, i) => setTimeout(() => playTone(f, 0.3, 'sawtooth', 0.16), i * 180)); },
+    /** Nitro whoosh: a rising noise sweep with a low thump underneath. */
+    nitro() {
+      playNoise(0.5, 0.45, 3000);
+      playTone(110, 0.5, 'sawtooth', 0.22, 30);
+    },
+    /** The soft chime when the watch changes (dawn, dusk, night). */
+    phase() { [784, 988].forEach((f, i) => setTimeout(() => playTone(f, 0.25, 'sine', 0.14), i * 140)); },
+    /** Thunder: a low rumble under a lightning strike. */
+    thunder() { playNoise(1.2, 0.4, 140); playTone(50, 1.0, 'sine', 0.25, 25); },
   };
 }

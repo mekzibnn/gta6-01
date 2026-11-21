@@ -143,6 +143,19 @@ export function spawnPed(random, city) {
     taxi: random() < 0.16,
     wait: range(random, 0, 4),
     wander: range(random, 2, 6),
+    // The ped mind (peds.js) fills these in on first sight: a role, the
+    // route it walks, where it is on that route, and its panic level.
+    role: null,
+    roleSpeed: 1,
+    rolePause: 0,
+    route: null,
+    routeIndex: 0,
+    pauseTimer: 0,
+    panic: 0,
+    // Walking together: a partner ped (or null), and which side of the
+    // route this one walks on when paired.
+    partner: null,
+    pairSide: 1,
   };
 }
 

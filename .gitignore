@@ -1,6 +1,12 @@
+# Solmar Heat (gta 06 v3) — files the entry never ships. Keep this list
+# tight: only generated output, local tooling, and OS/editor litter.
 # Build output: the dossier generator writes here (out/dossier.json).
 out/
 # Dependencies, if any are ever installed locally.
 node_modules/
 # Local run logs (serve.ts / tooling), never part of the entry.
 *.log
+# macOS Finder litter and editor scratch files.
+.DS_Store
+*.tmp
+*.swp

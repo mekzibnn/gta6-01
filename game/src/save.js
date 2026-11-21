@@ -39,6 +39,10 @@ export function saveGame(game) {
       ammo: game.player.ammo,
       radio: game.radio,
       raceBest: game.raceBest,
+      // The clock is saved so the day/night cycle continues where it left off.
+      clock: game.clock,
+      // The career's record, so the pause screen remembers the road so far.
+      stats: game.stats,
       savedAt: Date.now(),
     };
     window.localStorage.setItem(SAVE_KEY, JSON.stringify(data));

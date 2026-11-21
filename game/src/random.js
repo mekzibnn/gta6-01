@@ -26,6 +26,16 @@ export function pick(random, list) {
   return list[Math.floor(random() * list.length)];
 }
 
+/** True with probability p (0..1) — a seeded coin flip. */
+export function chance(random, p) {
+  return random() < p;
+}
+
+/** A whole number in [min, max] (inclusive) from the seeded generator. */
+export function rangeInt(random, min, max) {
+  return min + Math.floor(random() * (max - min + 1));
+}
+
 /** Pick one item, weighted by its `weight` field. */
 export function weightedPick(random, items) {
   const total = items.reduce((sum, item) => sum + (item.weight || 1), 0);

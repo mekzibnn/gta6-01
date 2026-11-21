@@ -1,13 +1,16 @@
-// Missions and side work. Mara, the fixer, calls Leo with a chain of eight
+// Missions and side work. Mara, the fixer, calls Leo with a chain of ten
 // story jobs; between them the city offers taxi fares, street races and ten
 // hidden packages. A mission is a list of objectives; each one points at a
 // place and pays when the player gets there (or does the job) in time.
-import { MISSION_REWARD, TAXI_FARE, PACKAGE_BONUS, HIDDEN_PACKAGES, RACES } from './config.js';
+import { MISSION_REWARD, TAXI_FARE, PACKAGE_BONUS, HIDDEN_PACKAGES, RACES, SMUGGLE } from './config.js';
 
-// Eight story jobs, in order. `time` is a mission-wide countdown, `wanted` is
+// Ten story jobs, in order. `time` is a mission-wide countdown, `wanted` is
 // the heat Mara puts on Leo when the job starts. Step types: steal (get in a
 // car), goto (reach a place), grab (stay put), wanted (reach a wanted level),
-// race (checkpoints in order), survive (stay alive for `time` seconds).
+// race (checkpoints in order), survive (stay alive for `time` seconds),
+// drop (deliver a package: pays on the spot and raises the heat a star).
+// `heatLock` on a job means the wanted level cannot decay below its start
+// while the job runs.
 export const STORY = [
   {
     id: 'wheels',
@@ -96,6 +99,32 @@ export const STORY = [
       { type: 'goto', place: 'portbank', text: 'Reach Portside Bank' },
       { type: 'grab', text: 'Grab the cash (stay 4 seconds)' },
       { type: 'goto', place: 'hideout', text: 'Escape to the Hideout — Air One is watching' },
+    ],
+  },
+  {
+    id: 'smuggler',
+    title: "Smuggler's Run",
+    brief: 'Mara: "A package from Portside, three drops across Solmar, 180 seconds. Every drop puts another star on you — keep moving, Leo."',
+    reward: MISSION_REWARD[8],
+    time: 180,
+    wanted: 3,
+    steps: [
+      { type: 'goto', place: 'portbank', text: 'Pick up the package at Portside Bank' },
+      { type: 'drop', place: 'marina', text: 'Drop 1: Marina Solmar — heat rises' },
+      { type: 'drop', place: 'beachbar', text: 'Drop 2: Playa Bar — heat rises' },
+      { type: 'drop', place: 'hideout', text: 'Final drop: the Hideout' },
+    ],
+  },
+  {
+    id: 'heatwave',
+    title: 'Heat Wave',
+    brief: 'Mara: "Five stars, Air One above, and the heat will NOT cool off until you vanish. Ninety seconds, Leo — then the hideout."',
+    reward: MISSION_REWARD[9],
+    wanted: 5,
+    heatLock: true,
+    steps: [
+      { type: 'survive', time: 90, text: 'Ride out the five-star heat for 90 seconds' },
+      { type: 'goto', place: 'hideout', text: 'Vanish at the Hideout' },
     ],
   },
 ];
@@ -227,6 +256,20 @@ export function stepMission(state, player, city, dt, audio) {
     }
     return null;
   }
+  if (step.type === 'drop' && place) {
+    // A smuggler's drop: the package changes hands, the cash lands on the
+    // spot, and the heat climbs a star — the job gets harder with every stop.
+    if (atPlace(player, place, 90)) {
+      player.cash += SMUGGLE.dropBonus;
+      player.wanted = Math.min(5, player.wanted + SMUGGLE.dropHeat);
+      player.wantedTimer = 0;
+      if (audio) audio.wantedUp();
+      const outcome = advanceStep(state, player, audio);
+      if (outcome.startsWith('mission-done:')) return outcome;
+      return `drop:${player.wanted}`;
+    }
+    return null;
+  }
   if (step.type === 'grab') {
     if (atPlace(player, city.places.portbank, 110)) {
       state.grabTimer += dt;
@@ -295,10 +338,11 @@ export function stepTaxi(state, player, dt, audio) {
   return null;
 }
 
-/** Pay the fare out when the passenger is dropped off. */
-export function finishTaxi(state, player, audio) {
+/** Pay the fare out when the passenger is dropped off. `payMult` lifts the
+ * fare after dark (the night pays better); it defaults to 1 in daylight. */
+export function finishTaxi(state, player, audio, payMult = 1) {
   if (!state.taxi) return 0;
-  const fare = TAXI_FARE + Math.floor(Math.random() * 60);
+  const fare = Math.round((TAXI_FARE + Math.floor(Math.random() * 60)) * payMult);
   player.cash += fare;
   state.taxi = null;
   if (audio) audio.coin();
@@ -370,8 +414,8 @@ export function stepRace(state, player, city, dt, audio) {
 }
 
 /** Pay the race win and record the best time. */
-export function finishRace(state, player, audio) {
-  const reward = RACES.reward;
+export function finishRace(state, player, audio, payMult = 1) {
+  const reward = Math.round(RACES.reward * payMult);
   player.cash += reward;
   if (state.best === null || state.elapsed < state.best) state.best = state.elapsed;
   if (audio) audio.missionDone();

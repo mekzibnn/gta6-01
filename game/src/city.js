@@ -105,6 +105,59 @@ export function resolveCircle(city, x, y, radius) {
   return { x: px, y: py };
 }
 
+/** Sidewalk graph: pavement corners at every crossing, linked along each
+ * road edge, so pedestrians can walk routes instead of wandering. Built
+ * from the road grid alone (no random draws), so the seeded city is
+ * untouched by it. Returns { corners, segments, next } where `next` maps
+ * each corner to the corners it connects to. */
+function buildWalkways(vertical, horizontal) {
+  const corners = [];
+  const at = new Map();
+  const key = (x, y) => `${x},${y}`;
+  for (const rx of vertical) {
+    for (const ry of horizontal) {
+      for (const [dx, dy] of [[-60, -60], [60, -60], [-60, 60], [60, 60]]) {
+        const x = rx + dx;
+        const y = ry + dy;
+        if (y >= CITY.beachY) continue;
+        if (!at.has(key(x, y))) {
+          at.set(key(x, y), corners.length);
+          corners.push({ x, y });
+        }
+      }
+    }
+  }
+  const segments = [];
+  const link = (a, b) => {
+    if (a === undefined || b === undefined || a === b) return;
+    segments.push([a, b]);
+  };
+  // Along each vertical road edge, link neighbouring corners.
+  for (const rx of vertical) {
+    for (const side of [-60, 60]) {
+      const line = corners.filter((c) => c.x === rx + side).sort((a, b) => a.y - b.y);
+      for (let i = 0; i < line.length - 1; i += 1) {
+        link(at.get(key(line[i].x, line[i].y)), at.get(key(line[i + 1].x, line[i + 1].y)));
+      }
+    }
+  }
+  // Along each horizontal road edge, link neighbouring corners.
+  for (const ry of horizontal) {
+    for (const side of [-60, 60]) {
+      const line = corners.filter((c) => c.y === ry + side).sort((a, b) => a.x - b.x);
+      for (let i = 0; i < line.length - 1; i += 1) {
+        link(at.get(key(line[i].x, line[i].y)), at.get(key(line[i + 1].x, line[i + 1].y)));
+      }
+    }
+  }
+  const next = corners.map(() => []);
+  for (const [a, b] of segments) {
+    next[a].push(b);
+    next[b].push(a);
+  }
+  return { corners, segments, next };
+}
+
 /** Build the whole city from a seeded generator. */
 export function buildCity(random) {
   const { vertical, horizontal } = roadLines();
@@ -219,5 +272,8 @@ export function buildCity(random) {
   ];
   for (const spot of spots) hiddenPackages.push({ ...spot, found: false });
 
-  return { roads: roadLines(), buildings, parks, palms, lamps, lots, places, hiddenPackages };
+  // The sidewalk graph pedestrians walk: corners and links, no random draws.
+  const walkways = buildWalkways(vertical, horizontal);
+
+  return { roads: roadLines(), buildings, parks, palms, lamps, lots, places, hiddenPackages, walkways };
 }

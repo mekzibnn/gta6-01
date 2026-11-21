@@ -1,3 +1,10 @@
+Attribution — three.js r187, vendored for Solmar Heat v3 (gta 06 v3).
+The game loads it offline from game/vendor/three.module.min.js (which
+re-exports game/vendor/three.core.min.js) through the import map in
+game/index.html. No code in these files was written by the entry authors;
+the library is used exactly as published, under its MIT license below.
+The full three.js project lives at https://threejs.org.
+
 The MIT License
 
 Copyright © 2010-2026 three.js authors

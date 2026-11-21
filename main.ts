@@ -12,6 +12,13 @@
 // unchanged: it still copies game/ and screenshots/ and writes the dossier
 // with the vendored library.
 //
+// v3: ten story missions (Smuggler's Run and Heat Wave join the eight),
+// a garage upgrade shop with nitro (game/src/upgrades.js), a day/night
+// cycle (game/src/daynight.js) that lights the streetlamps and the
+// headlights, pedestrian AI on a sidewalk graph (game/src/peds.js), and a
+// widget-registry HUD (game/src/hud.js). The program itself is still
+// unchanged: copy game/ and screenshots/, write the dossier.
+//
 // Serve it locally with `node serve.ts`, then open http://localhost:8080.
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts

@@ -10,6 +10,10 @@
 import * as THREE from 'three';
 import { VIEW, WORLD, CITY, PALETTE, FONT, FONT_DISPLAY, CAR } from './config.js';
 import { drawHud } from './hud.js';
+import { moonAngleFor } from './daynight.js';
+import { weatherFogFar, weatherDarkness, weatherRain } from './weather.js';
+import { statsRows, statsMilestones } from './stats.js';
+import { bustedPenalty } from './upgrades.js';
 
 export const SCREEN_TITLE = 'title';
 export const SCREEN_PLAY = 'play';
@@ -565,6 +569,11 @@ export function createRenderer(gameCanvas, hudCanvas) {
     particles: null,
     particlePos: null,
     particleCol: null,
+    lampGlow: null,
+    rain: null,
+    rainPos: null,
+    stars: null,
+    moon: null,
   };
   let viewScale = 1;
   let viewX = 0;
@@ -607,6 +616,29 @@ export function createRenderer(gameCanvas, hudCanvas) {
       scene.add(mesh);
       dyn.packages.push({ pack, mesh });
     }
+    // Streetlamp glow: one warm point floating over every lamp, lit after
+    // dark by the day/night cycle. Rebuilt with the city so a new seed
+    // never leaves stale lights behind.
+    if (dyn.lampGlow) {
+      scene.remove(dyn.lampGlow);
+      dyn.lampGlow.geometry.dispose();
+      dyn.lampGlow.material.dispose();
+      dyn.lampGlow = null;
+    }
+    const lampCount = game.city.lamps.length;
+    const lampGeo = new THREE.BufferGeometry();
+    const lampPos = new Float32Array(lampCount * 3);
+    game.city.lamps.forEach((lamp, i) => {
+      lampPos[i * 3] = lamp.x;
+      lampPos[i * 3 + 1] = 30;
+      lampPos[i * 3 + 2] = lamp.y;
+    });
+    lampGeo.setAttribute('position', new THREE.BufferAttribute(lampPos, 3));
+    dyn.lampGlow = new THREE.Points(lampGeo, new THREE.PointsMaterial({
+      color: 0xffd9a0, size: 24, transparent: true, opacity: 0, depthWrite: false,
+    }));
+    dyn.lampGlow.frustumCulled = false;
+    scene.add(dyn.lampGlow);
     // Particle points, one buffer for the whole game.
     if (!dyn.particles) {
       const max = 240;
@@ -879,7 +911,54 @@ export function createRenderer(gameCanvas, hudCanvas) {
   }
 
   /** Sun, sky and fog follow the in-game clock. */
-  function updateLighting(game) {
+  /** Rain, stars and the moon, built once and moved with the player. */
+  function ensureSkyFx(game) {
+    if (!dyn.rain) {
+      const count = 350;
+      const geo = new THREE.BufferGeometry();
+      dyn.rainPos = new Float32Array(count * 3);
+      for (let i = 0; i < count; i += 1) {
+        dyn.rainPos[i * 3] = game.player.x + (Math.random() * 2 - 1) * 700;
+        dyn.rainPos[i * 3 + 1] = Math.random() * 700;
+        dyn.rainPos[i * 3 + 2] = game.player.y + (Math.random() * 2 - 1) * 700;
+      }
+      geo.setAttribute('position', new THREE.BufferAttribute(dyn.rainPos, 3));
+      dyn.rain = new THREE.Points(geo, new THREE.PointsMaterial({
+        color: 0xaec6dd, size: 3, transparent: true, opacity: 0, depthWrite: false,
+      }));
+      dyn.rain.frustumCulled = false;
+      scene.add(dyn.rain);
+    }
+    if (!dyn.stars) {
+      // Stars sit on a dome over the whole city, placed with the game's
+      // seeded generator so the night sky is the same every run.
+      const count = 260;
+      const geo = new THREE.BufferGeometry();
+      const pos = new Float32Array(count * 3);
+      for (let i = 0; i < count; i += 1) {
+        const a = game.random() * Math.PI * 2;
+        const r = 1800 + game.random() * 1200;
+        pos[i * 3] = WORLD.width / 2 + Math.cos(a) * r;
+        pos[i * 3 + 1] = 350 + game.random() * 1600;
+        pos[i * 3 + 2] = WORLD.height / 2 + Math.sin(a) * r;
+      }
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      dyn.stars = new THREE.Points(geo, new THREE.PointsMaterial({
+        color: 0xffffff, size: 2.2, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false,
+      }));
+      dyn.stars.frustumCulled = false;
+      scene.add(dyn.stars);
+    }
+    if (!dyn.moon) {
+      dyn.moon = new THREE.Mesh(
+        new THREE.SphereGeometry(60, 20, 14),
+        new THREE.MeshBasicMaterial({ color: 0xf4f1de, transparent: true, opacity: 0 }),
+      );
+      scene.add(dyn.moon);
+    }
+  }
+
+  function updateLighting(game, dt) {
     const hour = (game.clock / 60) % 24;
     const nightF = game.nightFactor;
     const goldenF = goldenFactor(hour);
@@ -889,6 +968,13 @@ export function createRenderer(gameCanvas, hudCanvas) {
     const sky = daySky.clone().lerp(goldenSky, goldenF).lerp(nightSky, nightF);
     scene.background.copy(sky);
     scene.fog.color.copy(sky);
+    // Weather closes the fog in and darkens the sky a little further.
+    if (game.weather) {
+      scene.fog.far = weatherFogFar(game.weather);
+      sky.lerp(nightSky, weatherDarkness(game.weather) * 0.6);
+      scene.background.copy(sky);
+      scene.fog.color.copy(sky);
+    }
     hemi.intensity = (0.95 + (0.7 - 0.95) * goldenF) * (1 - nightF) + 0.28 * nightF;
     sun.intensity = (1.6 + (1.2 - 1.6) * goldenF) * (1 - nightF) + 0.3 * nightF;
     sun.color.copy(lerpColor('#fff2d0', '#ffb347', goldenF)).lerp(lerpColor('#93a7ff', '#93a7ff', 0), nightF);
@@ -897,6 +983,11 @@ export function createRenderer(gameCanvas, hudCanvas) {
     const player = game.player;
     sun.position.set(player.x + dir.x * 1000, dir.y * 1000 + 120, player.y + dir.z * 1000);
     sun.target.position.set(player.x, 0, player.y);
+    // Streetlamps: the day/night cycle's glow value drives the points.
+    if (dyn.lampGlow) {
+      const glow = game.daynight ? game.daynight.lampGlow : nightF;
+      dyn.lampGlow.material.opacity = Math.min(1, Math.max(0, glow)) * 0.9;
+    }
     // Headlights after dark, from the player's car.
     if (!player.onFoot && player.car) {
       const car = player.car;
@@ -923,6 +1014,39 @@ export function createRenderer(gameCanvas, hudCanvas) {
       flashLight.intensity = 26;
       flashLight.position.set(nearest.x, 30, nearest.y);
     } else flashLight.intensity = 0;
+    // Rain, stars and the moon ride the sky the cycle and the weather made.
+    ensureSkyFx(game);
+    const rainStrength = game.weather ? weatherRain(game.weather) : 0;
+    if (dyn.rain) {
+      dyn.rain.material.opacity = rainStrength * 0.55;
+      if (rainStrength > 0 && dyn.rainPos) {
+        for (let i = 0; i < dyn.rainPos.length; i += 3) {
+          dyn.rainPos[i + 1] -= 620 * dt;
+          if (dyn.rainPos[i + 1] < 0) {
+            dyn.rainPos[i] = player.x + (Math.random() * 2 - 1) * 700;
+            dyn.rainPos[i + 1] = 650 + Math.random() * 50;
+            dyn.rainPos[i + 2] = player.y + (Math.random() * 2 - 1) * 700;
+          }
+        }
+        dyn.rain.geometry.attributes.position.needsUpdate = true;
+      }
+    }
+    // Stars fade in with the dark; the moon rides its nightly arc.
+    if (dyn.stars) dyn.stars.material.opacity = nightF * 0.9;
+    const moonAngle = moonAngleFor(game.clock);
+    if (dyn.moon) {
+      if (moonAngle === null) {
+        dyn.moon.visible = false;
+      } else {
+        dyn.moon.visible = true;
+        dyn.moon.position.set(
+          player.x + Math.cos(moonAngle) * 900,
+          350 + Math.sin(moonAngle) * 350,
+          player.y + Math.sin(moonAngle) * 900,
+        );
+        dyn.moon.material.opacity = nightF > 0.05 ? 0.95 : 0;
+      }
+    }
   }
 
   /** Screen (CSS px) to world coordinates, for mouse aiming. */
@@ -991,8 +1115,8 @@ export function createRenderer(gameCanvas, hudCanvas) {
     hudCtx.fillText(game.hasSave ? 'CONTINUE  —  press SPACE' : 'NEW GAME  —  press SPACE', VIEW.width / 2, 455);
     hudCtx.fillStyle = PALETTE.muted;
     hudCtx.font = `400 15px ${FONT}`;
-    hudCtx.fillText('WASD drive & walk  ·  E enter / steal car  ·  F punch  ·  mouse aim, click shoot  ·  Q weapon  ·  R radio  ·  P pause  ·  M mute', VIEW.width / 2, 520);
-    hudCtx.fillText('8 story missions  ·  street races  ·  Air One heli  ·  radio  ·  garage upgrades  ·  respect ranks  ·  10 hidden packages', VIEW.width / 2, 546);
+    hudCtx.fillText('WASD drive & walk  ·  E enter / steal car  ·  F punch  ·  mouse aim, click shoot  ·  Q weapon  ·  R radio  ·  N nitro  ·  P pause  ·  M mute', VIEW.width / 2, 520);
+    hudCtx.fillText('10 story missions  ·  street races  ·  Air One heli  ·  radio  ·  garage upgrades & nitro  ·  day / night  ·  respect ranks  ·  10 hidden packages', VIEW.width / 2, 546);
     hudCtx.textAlign = 'left';
   }
 
@@ -1005,7 +1129,7 @@ export function createRenderer(gameCanvas, hudCanvas) {
       lastNow = now;
       ensureCity(game);
       syncDynamic(game);
-      updateLighting(game);
+      updateLighting(game, dt);
       updateCamera(game, dt, screen);
       renderer.render(scene, camera);
       // HUD on its own canvas, cleared every frame.
@@ -1017,17 +1141,28 @@ export function createRenderer(gameCanvas, hudCanvas) {
       }
       hudTransform();
       drawHud(hudCtx, game);
+      // Lightning: a white flash over the HUD when the sky strikes.
+      if (game.weather && game.weather.flash > 0) {
+        hudCtx.fillStyle = `rgba(255, 255, 255, ${game.weather.flash * 0.3})`;
+        hudCtx.fillRect(0, 0, VIEW.width, VIEW.height);
+      }
       // Hurt flash over the HUD.
       if (game.player.hurtFlash > 0) {
         hudCtx.fillStyle = `rgba(255, 40, 30, ${game.player.hurtFlash * 0.4})`;
         hudCtx.fillRect(0, 0, VIEW.width, VIEW.height);
       }
       if (screen === SCREEN_PAUSED) {
-        overlay('PAUSED', ['Take a breath, Leo. Solmar waits.'], 'SPACE to resume · the game saves on mission complete');
+        // The pause screen is the career's record: every stat the loop
+        // tracked, so the player can see how far Leo has come.
+        const rows = statsRows(game.stats).map((row) => `${row.label}: ${row.value}`);
+        const marks = statsMilestones(game.stats);
+        const lines = ['Take a breath, Leo. Solmar waits.', '', ...rows];
+        if (marks.length) lines.push('', ...marks.map((m) => `★ ${m}`));
+        overlay('PAUSED', lines, 'SPACE to resume · the game saves on mission complete');
       } else if (screen === SCREEN_BUSTED) {
-        overlay('BUSTED', ['The SCPD took you in.', 'Fine: $200. The story continues.'], 'SPACE to walk free');
+        overlay('BUSTED', ['The SCPD took you in.', `Fine: $${bustedPenalty(game.upgrades)}. The story continues.`], 'SPACE to walk free');
       } else if (screen === SCREEN_WASTED) {
-        overlay('WASTED', ['Solmar is unforgiving.', 'You wake up at Clinica Sol, $200 lighter.'], 'SPACE to get back up');
+        overlay('WASTED', ['Solmar is unforgiving.', `You wake up at Clinica Sol, $${bustedPenalty(game.upgrades)} lighter.`], 'SPACE to get back up');
       } else if (screen === SCREEN_WIN) {
         overlay('SOLMAR LEGEND', ['Every job done. Every star outrun.', 'The city is yours, Leo.'], 'SPACE to keep playing the city');
       }

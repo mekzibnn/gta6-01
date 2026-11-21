@@ -1,1 +1,22 @@
-[{"query":"?shot=cover&seed=1","name":"1-cover.jpg"},{"query":"?shot=drive&seed=1","name":"2-drive.jpg"},{"query":"?shot=mission&seed=1","name":"3-mission.jpg"},{"query":"?shot=night&seed=1","name":"4-night.jpg"}]
+[
+  {
+    "description": "Cover: a four-star chase at golden hour, Air One parked ahead below the mission banner",
+    "name": "1-cover.jpg",
+    "query": "?shot=cover&seed=1"
+  },
+  {
+    "description": "Drive: golden-hour cruise in a garage-tuned sport car — Race engine, sunset-orange paint, two nitro charges",
+    "name": "2-drive.jpg",
+    "query": "?shot=drive&seed=1"
+  },
+  {
+    "description": "Mission: Smuggler's Run (mission 9) briefing at Portside Bank, crew beside Leo",
+    "name": "3-mission.jpg",
+    "query": "?shot=mission&seed=1"
+  },
+  {
+    "description": "Night: downtown after dark — streetlamps lit, headlights on, nitro burning, Air One circling",
+    "name": "4-night.jpg",
+    "query": "?shot=night&seed=1"
+  }
+]
