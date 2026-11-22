@@ -169,12 +169,17 @@ export function drawHud(hud, world, dt) {
   const hh = String(Math.floor(hour) % 24).padStart(2, '0');
   const mm = String(Math.floor((hour % 1) * 60)).padStart(2, '0');
 
+  // Snapshot the banner state before it ticks down: the centered mission
+  // banner and the persistent objective strip show the same step, so they
+  // are never drawn together (they used to overlap and the texts collided).
+  const bannerUp = hud.bannerT > 0;
   if (hud.bannerT > 0) {
     hud.bannerT -= dt;
     const alpha = Math.min(1, hud.bannerT);
     ctx.globalAlpha = alpha;
     ctx.fillStyle = 'rgba(10,18,26,0.72)';
-    const bw = Math.min(900, 40 + hud.banner.length * 9);
+    ctx.font = '700 20px system-ui, sans-serif';
+    const bw = Math.min(900, 40 + ctx.measureText(hud.banner).width);
     ctx.fillRect(640 - bw / 2, 96, bw, 46);
     ctx.strokeStyle = '#ffd23f';
     ctx.strokeRect(640 - bw / 2 + 0.5, 96.5, bw, 46);
@@ -191,9 +196,15 @@ export function drawHud(hud, world, dt) {
   const frac = next ? (player.respect - prev) / (next.points - prev) : 1;
   bar(ctx, 20, 70, 220, 10, frac, '#ffd23f');
   const objective = world.objectiveText || '';
-  if (objective) {
+  // While the mission banner is up, the strip stays hidden; it returns
+  // when the banner fades, so exactly one objective display is ever on
+  // screen. The strip is also measured to fit its text (the old fixed
+  // 7.5 px/char box was narrower than the 15 px text and it overflowed).
+  if (objective && !bannerUp) {
+    ctx.font = '400 15px system-ui, sans-serif';
+    const ow = Math.min(560, 24 + ctx.measureText(objective).width);
     ctx.fillStyle = 'rgba(10,18,26,0.6)';
-    ctx.fillRect(20, 92, Math.min(560, 24 + objective.length * 7.5), 30);
+    ctx.fillRect(20, 92, ow, 30);
     text(ctx, objective, 30, 112, 15, '#fff', 'left');
   }
 
