@@ -2,7 +2,7 @@
 [![rank](https://make.fun/badge/gta6-01/mekzibnn/gta6-01/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![reward](https://make.fun/badge/gta6-01/mekzibnn/gta6-01/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 
-# SOLMAR HEAT — sun-soaked open-world crime: 12 story missions, 5-star dispatch with RAM/PIT units and Air One, exploding cars and burning wrecks, district standing, weapon wheel, crew, races, empire, garage, respect, saves, radio
+# SOLMAR HEAT — sun-soaked open-world crime: 12 story missions, 5-star dispatch with RAM/PIT units and Air One, exploding cars and burning wrecks, district standing, weapon wheel, crew, races, empire
 
 A 3D open-world crime game for the make.fun **gta6-01** bounty ($1,666).
 Leo Marin starts with a stolen car and a fixer on the phone; by the end of

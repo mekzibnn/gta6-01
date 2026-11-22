@@ -65,6 +65,12 @@ function nearSpot(x, z, margin) {
   return false;
 }
 
+// v8: the buildings are no longer one blue-grey wash — a sunset palette
+// (terracotta, sand, cream, coral, teal, dusty rose, steel blue) is dealt
+// per building, so the skyline reads as a beachfront city, not a prototype.
+const PALETTE = [0xe8a87c, 0xf2d8a7, 0xe8e8e8, 0xd96c5f, 0x7fb3b0, 0xc9a0c9, 0x5a7a9a, 0xf2c200, 0xa67c52, 0x8a94a6];
+const ROOFS = [0x2a2f36, 0x8a5a3a, 0x4a6b5a, 0x7a3a3a];
+
 export function initCity(seed) {
   let state = (seed >>> 0) || 1;
   const rnd = () => {
@@ -73,6 +79,7 @@ export function initCity(seed) {
   };
   const buildings = [];
   const lamps = [];
+  const palms = [];
   // One or two buildings per block, kept clear of the named spots.
   for (let bx = -150; bx <= 150; bx += 60) {
     for (let bz = -150; bz <= 150; bz += 60) {
@@ -89,7 +96,13 @@ export function initCity(seed) {
           x: bx + ox, z: bz + oz, w, d, h,
           hue: 0.55 + rnd() * 0.15,
           roof: rnd(),
+          color: PALETTE[Math.floor(rnd() * PALETTE.length)],
+          roofColor: ROOFS[Math.floor(rnd() * ROOFS.length)],
         });
+      }
+      // A palm on one corner of every other block — sidewalks, never roads.
+      if (rnd() < 0.55) {
+        palms.push({ x: bx + 24, z: bz + 24, h: 5 + rnd() * 3, lean: (rnd() - 0.5) * 0.3 });
       }
     }
   }
@@ -119,11 +132,21 @@ export function initCity(seed) {
       { x: 120, z: -60 },
     ],
   };
+  // Beach umbrellas on the sand strip west of the city (the Marina
+  // waterfront): a cone on a pole, one per gap between the palms.
+  const umbrellas = [
+    { x: -196, z: -120, color: 0xff5a5a },
+    { x: -196, z: -40, color: 0xffd23f },
+    { x: -196, z: 40, color: 0x4da3ff },
+    { x: -196, z: 120, color: 0x7cfc9a },
+  ];
   return {
     seed,
     spots: SPOTS,
     buildings,
     lamps,
+    palms,
+    umbrellas,
     gateRoutes,
     districtAt,
     half: WORLD.half,

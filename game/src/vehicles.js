@@ -22,7 +22,7 @@ let nextId = 1;
 export function spawnCar(model, x, z, heading) {
   const def = MODELS[model] || MODELS.sedan;
   return {
-    id: nextId,
+    id: nextId++,
     model,
     x, z,
     heading: heading || 0,

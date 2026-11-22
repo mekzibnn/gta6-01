@@ -6,7 +6,8 @@
 // the URL carries ?shot=.
 
 import { spawnCar, applyEngine } from './vehicles.js';
-import { spawnCop } from './actors.js';
+import { spawnCop, spawnWalker, spawnMate } from './actors.js';
+import { setRadio } from './audio.js';
 import { showBanner } from './hud.js';
 
 export function stageShot(world, name) {
@@ -30,7 +31,23 @@ export function stageShot(world, name) {
     world.mission.index = 0;
     world.mission.step = 0;
     world.camFixed = { pos: [-16, 7, 34], look: [0, 2, 70] };
-    showBanner(world.hud, 'Drive to the Garage — do not get busted');
+    // v8 staging: same as main.js applyShot — hired mate, radio, armour,
+    // pistol, traffic ahead, walkers on the sidewalk.
+    world.roster.hired.milo = { active: true };
+    world.mates.push(spawnMate('milo', p.x + 4, p.z + 4));
+    world.radio = true;
+    setRadio(world.audio, true);
+    world.garage.armor = 1;
+    world.player.weapons[1] = true;
+    world.player.weapon = 1;
+    world.cars.push(spawnCar('sedan', 8, 95, 0));
+    world.cars.push(spawnCar('taxi', -10, 118, 0));
+    for (const [wx, wz] of [[10, 74], [-12, 84], [12, 104], [-9, 126]]) {
+      const w = spawnWalker(wx, wz);
+      w.route = [{ x: wx, z: wz + 20 }, { x: wx, z: wz - 20 }];
+      world.peds.push(w);
+    }
+    showBanner(world.hud, 'Drive to the Garage — do not get busted', 'mission');
   } else if (name === 'drive') {
     world.clock.hour = 17.8;
     p.x = 0;

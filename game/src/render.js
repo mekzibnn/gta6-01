@@ -32,6 +32,9 @@ export function initRenderer(canvas, city) {
     rain: null,
     heli: null,
     lampLights: [],
+    clouds: [],
+    cloudMat: null,
+    sunDisc: null,
     camPos: new THREE.Vector3(0, 12, -18),
     camLook: new THREE.Vector3(0, 0, 0),
     built: false,
@@ -50,8 +53,10 @@ function buildStatic(state) {
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(0, -0.05, 0);
   scene.add(ground);
-  // Roads: one dark plane per avenue and per street.
+  // Roads: one dark plane per avenue and per street, each with a pale
+  // center line so the grid reads as streets, not black slabs.
   const roadMat = lambert(0x23282e);
+  const lineMat = new THREE.MeshBasicMaterial({ color: 0xd8c86a });
   for (let g = -180; g <= 180; g += 60) {
     const v = new THREE.Mesh(new THREE.PlaneGeometry(14, city.half * 2), roadMat);
     v.rotation.x = -Math.PI / 2;
@@ -61,18 +66,71 @@ function buildStatic(state) {
     h.rotation.x = -Math.PI / 2;
     h.position.set(0, 0, g);
     scene.add(h);
+    const vl = new THREE.Mesh(new THREE.PlaneGeometry(0.35, city.half * 2), lineMat);
+    vl.rotation.x = -Math.PI / 2;
+    vl.position.set(g, 0.02, 0);
+    scene.add(vl);
+    const hl = new THREE.Mesh(new THREE.PlaneGeometry(city.half * 2, 0.35), lineMat);
+    hl.rotation.x = -Math.PI / 2;
+    hl.position.set(0, 0.02, g);
+    scene.add(hl);
   }
-  // Buildings: boxes with a roof cap; downtown towers go taller.
+  // Crosswalks at the four central intersections.
+  const walkMat = new THREE.MeshBasicMaterial({ color: 0xe8e8e8 });
+  for (const [cx, cz] of [[-60, -60], [60, -60], [-60, 60], [60, 60]]) {
+    for (let i = -2; i <= 2; i += 1) {
+      const s = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 12), walkMat);
+      s.rotation.x = -Math.PI / 2;
+      s.position.set(cx + i * 2.4, 0.02, cz);
+      scene.add(s);
+    }
+  }
+  // Beach: the Marina waterfront west of the city — sand, then water.
+  const sand = new THREE.Mesh(new THREE.PlaneGeometry(30, city.half * 2), lambert(0xe8d8a0));
+  sand.rotation.x = -Math.PI / 2;
+  sand.position.set(-195, 0.01, 0);
+  scene.add(sand);
+  const water = new THREE.Mesh(
+    new THREE.PlaneGeometry(45, city.half * 2 + 60),
+    new THREE.MeshBasicMaterial({ color: 0x2e7fa8 }),
+  );
+  water.rotation.x = -Math.PI / 2;
+  water.position.set(-232, 0.02, 0);
+  scene.add(water);
+  for (const u of city.umbrellas || []) {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 2.6, 6), lambert(0x8a8a8a));
+    pole.position.set(u.x, 1.3, u.z);
+    scene.add(pole);
+    const top = new THREE.Mesh(new THREE.ConeGeometry(2.2, 1.1, 8), lambert(u.color));
+    top.position.set(u.x, 2.9, u.z);
+    scene.add(top);
+  }
+  // Buildings: boxes in the sunset palette with a roof cap; downtown
+  // towers go taller.
   for (const b of city.buildings) {
-    const color = new THREE.Color().setHSL(b.hue, 0.25, 0.42 + b.roof * 0.2);
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(b.w, b.h, b.d), lambert(color.getHex()));
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(b.w, b.h, b.d), lambert(b.color !== undefined ? b.color : new THREE.Color().setHSL(b.hue, 0.25, 0.42 + b.roof * 0.2).getHex()));
     mesh.position.set(b.x, b.h / 2, b.z);
     mesh.userData.building = true;
     scene.add(mesh);
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(b.w * 0.7, 0.6, b.d * 0.7), lambert(0x2a2f36));
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(b.w * 0.7, 0.6, b.d * 0.7), lambert(b.roofColor !== undefined ? b.roofColor : 0x2a2f36));
     roof.position.set(b.x, b.h + 0.3, b.z);
     scene.add(roof);
     b.mesh = mesh;
+  }
+  // Palms: a leaning trunk and five fronds, on the sidewalk corners.
+  for (const palm of city.palms || []) {
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, palm.h, 6), lambert(0x8a6b4a));
+    trunk.position.set(palm.x, palm.h / 2, palm.z);
+    trunk.rotation.z = palm.lean;
+    scene.add(trunk);
+    for (let f = 0; f < 5; f += 1) {
+      const a = (f / 5) * Math.PI * 2;
+      const frond = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.08, 0.9), lambert(0x3f8a4f));
+      frond.position.set(palm.x + Math.cos(a) * 1.4, palm.h + 0.2, palm.z + Math.sin(a) * 1.4);
+      frond.rotation.y = -a;
+      frond.rotation.z = 0.35;
+      scene.add(frond);
+    }
   }
   // Lamps: small glowing posts at the intersections.
   for (const lamp of city.lamps) {
@@ -109,6 +167,9 @@ function buildStatic(state) {
   const heli = new THREE.Group();
   const body = new THREE.Mesh(new THREE.BoxGeometry(4.4, 1.6, 2), lambert(0x1a1a1a));
   heli.add(body);
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.35, 2.05), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  stripe.position.set(0, 0.3, 0);
+  heli.add(stripe);
   const tail = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.5, 0.5), lambert(0x1a1a1a));
   tail.position.set(-3.6, 0.3, 0);
   heli.add(tail);
@@ -130,6 +191,30 @@ function buildStatic(state) {
   heli.visible = false;
   scene.add(heli);
   state.heli = heli;
+  // Clouds: flat white puffs high up, drifting slowly with the clock.
+  const cloudMat = new THREE.MeshBasicMaterial({ color: 0xfff4e0, transparent: true, opacity: 0.85, fog: false });
+  state.cloudMat = cloudMat;
+  for (let i = 0; i < 10; i += 1) {
+    const group = new THREE.Group();
+    const puffs = 2 + (i % 3);
+    for (let j = 0; j < puffs; j += 1) {
+      const puff = new THREE.Mesh(new THREE.SphereGeometry(6 + ((i + j) % 3) * 3, 8, 6), cloudMat);
+      puff.scale.y = 0.35;
+      puff.position.set(j * 9 - puffs * 4, (j % 2) * 1.5, 0);
+      group.add(puff);
+    }
+    group.position.set(-320 + i * 70 + (i % 2) * 30, 65 + (i % 4) * 8, -260 + (i * 53) % 520);
+    scene.add(group);
+    state.clouds.push(group);
+  }
+  // Sun disc: a bright low sun on the horizon at golden hour.
+  const disc = new THREE.Mesh(
+    new THREE.CircleGeometry(22, 24),
+    new THREE.MeshBasicMaterial({ color: 0xffd23f, fog: false }),
+  );
+  disc.visible = false;
+  scene.add(disc);
+  state.sunDisc = disc;
   state.built = true;
 }
 
@@ -188,6 +273,16 @@ function carGroup(car) {
     const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.25, 0.5), lightMat);
     lamp.position.set(def.len / 2 + 0.02, 0.6, wz);
     group.add(lamp);
+  }
+  // Sport cars get a rear spoiler and a roof stripe — the player's ride
+  // should read as tuned, not a grey box.
+  if (car.model === 'sport') {
+    const spoiler = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.5, def.wid * 0.95), lambert(0x1a1a1a));
+    spoiler.position.set(-def.len / 2 - 0.1, 1.35, 0);
+    group.add(spoiler);
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(def.len * 0.5, 0.06, 0.5), lambert(0x1a1a1a));
+    stripe.position.set(0, 1.53, 0);
+    group.add(stripe);
   }
   if (car.model === 'cop' || car.model === 'ram' || car.model === 'pit') {
     const bar = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.22, 1.5), new THREE.MeshBasicMaterial({ color: 0xff2222 }));
@@ -328,6 +423,30 @@ export function renderFrame(state, world, dt) {
   state.lampLights[0].intensity = night ? 22 : 0;
   state.lampLights[1].position.set(world.player.x - 6, 6, world.player.z);
   state.lampLights[1].intensity = night ? 22 : 0;
+  // Clouds drift slowly east; the sun disc hangs low at golden hour and
+  // climbs at midday, hidden at night. The puffs share one material, so
+  // the opacity is set on it, not on the groups.
+  state.cloudMat.opacity = clock.isNight ? 0.25 : clock.golden ? 0.95 : 0.85;
+  for (const cloud of state.clouds) {
+    cloud.position.x += dt * 1.2;
+    if (cloud.position.x > 340) cloud.position.x = -340;
+  }
+  const disc = state.sunDisc;
+  if (disc) {
+    if (clock.isNight) {
+      disc.visible = false;
+    } else {
+      // The sun hangs in the sky ahead of the camera (a skybox sun): it is
+      // always in frame at golden hour, low on the horizon, higher at noon.
+      disc.visible = true;
+      const viewDir = new THREE.Vector3();
+      camera.getWorldDirection(viewDir);
+      disc.position.copy(camera.position).addScaledVector(viewDir, 350);
+      disc.position.y = clock.golden ? 95 : 170;
+      disc.lookAt(camera.position);
+      disc.material.color.setHex(clock.golden ? 0xffc21a : 0xfff2b0);
+    }
+  }
 
   // Prune meshes for cars that left the world.
   const liveCars = new Set((world.cars || []).map((c) => c.id));
@@ -407,7 +526,7 @@ export function renderFrame(state, world, dt) {
     heli.visible = true;
     const hx = world.player.x + Math.sin(time * 0.4) * 26;
     const hz = world.player.z + Math.cos(time * 0.4) * 26;
-    heli.position.set(hx, 42, hz);
+    heli.position.set(hx, 30, hz);
     heli.rotation.y = -Math.atan2(world.player.x - hx, world.player.z - hz);
     heli.userData.rotor.rotation.y += dt * 22;
     heli.userData.spot.intensity = 30;

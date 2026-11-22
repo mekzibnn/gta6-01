@@ -315,7 +315,24 @@ function applyShot(world, name) {
     world.mission.index = 0;
     world.mission.step = 0;
     world.camFixed = { pos: [-16, 7, 34], look: [0, 2, 70] };
-    showBanner(world.hud, 'Drive to the Garage — do not get busted');
+    // v8 staging: a hired mate (crew card), the radio on, light armour,
+    // a pistol in the wheel, traffic ahead and walkers on the sidewalk —
+    // the cover should read as a finished game, not a prototype.
+    world.roster.hired.milo = { active: true };
+    world.mates.push(spawnMate('milo', p.x + 4, p.z + 4));
+    world.radio = true;
+    setRadio(world.audio, true);
+    world.garage.armor = 1;
+    world.player.weapons[1] = true;
+    world.player.weapon = 1;
+    world.cars.push(spawnCar('sedan', 8, 95, 0));
+    world.cars.push(spawnCar('taxi', -10, 118, 0));
+    for (const [wx, wz] of [[10, 74], [-12, 84], [12, 104], [-9, 126]]) {
+      const w = spawnWalker(wx, wz);
+      w.route = [{ x: wx, z: wz + 20 }, { x: wx, z: wz - 20 }];
+      world.peds.push(w);
+    }
+    showBanner(world.hud, 'Drive to the Garage — do not get busted', 'mission');
   } else if (name === 'drive') {
     world.clock.hour = 17.8;
     p.x = 0;
@@ -608,7 +625,7 @@ function loop(world, hud, render, input, last) {
   const missionEvent = tickMission(world.mission, world, dt);
   if (missionEvent) {
     if (missionEvent.type === 'done') {
-      showBanner(world.hud, `${missionEvent.mission.name} — $${missionEvent.reward}`);
+      showBanner(world.hud, `${missionEvent.mission.name} — $${missionEvent.reward}`, 'done', { mission: missionEvent.mission, reward: missionEvent.reward });
       (world.sfx || (world.sfx = [])).push('mission');
       ledgerMission(world.ledger);
       ledgerEarn(world.ledger, missionEvent.reward);
