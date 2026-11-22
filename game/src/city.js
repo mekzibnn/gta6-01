@@ -1,181 +1,133 @@
-// Solmar City — the map (v6 rewrite).
-// A seeded grid city: avenues run north-south, streets run east-west, and
-// the blocks between them hold the buildings. Five districts give the city
-// its character — harbor, marina, uptown, downtown and the central strip —
-// and every business, garage, hideout and race gate sits at a fixed spot
-// the missions and the HUD can point at.
+// Solmar Heat v7 — the city.
+// Solmar is a grid: avenues run north-south, streets east-west, a block
+// between every pair. The layout is fixed (so missions and tests always
+// find the same corners), while the buildings inside the blocks are dealt
+// from the seed. Five districts split the map; districtAt() tells you
+// which one any position belongs to.
 
-import { makeDice, diceRange, dicePick, diceInt } from './random.js';
-import { WORLD, LOOK } from './config.js';
+import { WORLD, DISTRICTS } from './config.js';
 
-export const DISTRICTS = [
-  { id: 'harbor', label: 'Harbor', x0: -340, z0: 88, x1: -88, z1: 340 },
-  { id: 'marina', label: 'Marina', x0: 88, z0: 88, x1: 340, z1: 340 },
-  { id: 'uptown', label: 'Uptown', x0: -340, z0: -340, x1: -88, z1: -88 },
-  { id: 'downtown', label: 'Downtown', x0: 88, z0: -340, x1: 340, z1: -88 },
-  { id: 'central', label: 'Central Solmar', x0: -88, z0: -88, x1: 88, z1: 88 },
-];
-
-export const AVENUES = [-264, -176, -88, 0, 88, 176, 264];
-export const STREETS = [-264, -176, -88, 0, 88, 176, 264];
-
-// Fixed spots, chosen fresh for v6. Missions, shops and races point here.
+// Named places. The two the playtest pins down are the Gun Store and the
+// Crew Office; everything else is read out of city.spots at runtime.
 export const SPOTS = {
-  hideout: { x: -24, z: 196, label: 'Hideout' },
-  garage: { x: 148, z: -148, label: 'Garage' },
-  chopShop: { x: -196, z: -24, label: 'Chop Shop' },
-  fence: { x: 196, z: 24, label: 'Fence' },
-  hospital: { x: -148, z: 148, label: 'Hospital' },
-  police: { x: 24, z: -196, label: 'Police HQ' },
-  taxiOffice: { x: -220, z: -180, label: 'Sunset Taxi Co.' },
-  laundry: { x: -220, z: 180, label: 'Solmar Laundry' },
-  carWash: { x: 220, z: 180, label: 'Palm Wash' },
-  nightclub: { x: 220, z: -180, label: 'Neon Palms Club' },
-  dragStrip: { x: 0, z: 264, label: 'Drag Strip' },
-  pier: { x: -264, z: 264, label: 'Pier' },
-  plaza: { x: 0, z: 0, label: 'Central Plaza' },
+  hideout: { x: -6, z: 150, label: 'Hideout' },
+  garage: { x: 60, z: 90, label: 'Garage' },
+  pier: { x: -150, z: 150, label: 'Pier' },
+  fence: { x: 150, z: -150, label: 'Fence' },
+  chopShop: { x: -150, z: -90, label: 'Chop Shop' },
+  laundry: { x: 60, z: 150, label: 'Solmar Laundry' },
+  carWash: { x: -90, z: 120, label: 'Sunset Car Wash' },
+  taxiCo: { x: 90, z: -120, label: 'Sunset Taxi Co.' },
+  nightclub: { x: 0, z: -150, label: 'Club Neon' },
+  dragStrip: { x: 120, z: 60, label: 'Race Office' },
+  gunStore: { x: 148, z: 148, label: 'Gun Store' },
+  crewOffice: { x: -24, z: -196, label: 'Crew Office' },
+  diner: { x: -120, z: 30, label: 'Diner' },
 };
 
-// Race gate chains, laid along the road grid (v6 routes).
-export const GATE_ROUTES = {
-  drag: [
-    { x: -88, z: 264 },
-    { x: 88, z: 264 },
-  ],
-  sprint: [
-    { x: -264, z: 88 },
-    { x: -88, z: 88 },
-    { x: 88, z: -88 },
-    { x: 264, z: -88 },
-  ],
-  circuit: [
-    { x: -176, z: -176 },
-    { x: 176, z: -176 },
-    { x: 176, z: 176 },
-    { x: -176, z: 176 },
-    { x: -176, z: 0 },
-    { x: 0, z: 0 },
-  ],
+const VENTURE_SPOT = {
+  'solmar-laundry': 'laundry',
+  'sunset-carwash': 'carWash',
+  'sunset-taxi': 'taxiCo',
+  'club-neon': 'nightclub',
 };
 
 export function districtAt(x, z) {
-  for (const d of DISTRICTS) {
-    if (x >= d.x0 && x <= d.x1 && z >= d.z0 && z <= d.z1) return d;
-  }
-  return DISTRICTS[4];
+  let id = 'downtown';
+  if (Math.abs(x) <= 60 && Math.abs(z) <= 60) id = 'downtown';
+  else if (x < -60 && z > 60) id = 'marina';
+  else if (x < -60 && z < -60) id = 'oldtown';
+  else if (x > 60 && z < -60) id = 'docks';
+  else if (x > 60 && z > 60) id = 'hills';
+  else if (z > 60) id = x <= 0 ? 'marina' : 'hills';
+  else if (z < -60) id = x <= 0 ? 'oldtown' : 'docks';
+  else if (x < -60) id = z <= 0 ? 'oldtown' : 'marina';
+  else id = z <= 0 ? 'docks' : 'hills';
+  return DISTRICTS.find((d) => d.id === id);
 }
 
-export function nearestAvenue(x) {
-  let best = AVENUES[0];
-  let bestD = Infinity;
-  for (const a of AVENUES) {
-    const d = Math.abs(a - x);
-    if (d < bestD) { bestD = d; best = a; }
-  }
-  return best;
+export function ventureSpot(city, ventureId) {
+  const key = VENTURE_SPOT[ventureId];
+  return key ? city.spots[key] : null;
 }
 
-export function nearestStreet(z) {
-  let best = STREETS[0];
-  let bestD = Infinity;
-  for (const s of STREETS) {
-    const d = Math.abs(s - z);
-    if (d < bestD) { bestD = d; best = s; }
-  }
-  return best;
+export function gateChain(city, raceId) {
+  return city.gateRoutes[raceId] || [];
 }
 
-export function onRoad(x, z) {
-  const half = WORLD.roadWidth / 2;
-  for (const a of AVENUES) if (Math.abs(x - a) <= half) return true;
-  for (const s of STREETS) if (Math.abs(z - s) <= half) return true;
+function nearSpot(x, z, margin) {
+  for (const key of Object.keys(SPOTS)) {
+    const s = SPOTS[key];
+    const dx = s.x - x;
+    const dz = s.z - z;
+    if (dx * dx + dz * dz < margin * margin) return true;
+  }
   return false;
 }
 
-export function clampToCity(x, z) {
-  const m = WORLD.halfSize - 8;
-  return {
-    x: Math.max(-m, Math.min(m, x)),
-    z: Math.max(-m, Math.min(m, z)),
-  };
-}
-
 export function initCity(seed) {
-  const dice = makeDice(seed);
+  let state = (seed >>> 0) || 1;
+  const rnd = () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
   const buildings = [];
-  // One building per block cell, seeded so the skyline never changes.
-  for (let ix = 0; ix < AVENUES.length - 1; ix += 1) {
-    for (let iz = 0; iz < STREETS.length - 1; iz += 1) {
-      const cx = (AVENUES[ix] + AVENUES[ix + 1]) / 2;
-      const cz = (STREETS[iz] + STREETS[iz + 1]) / 2;
-      const d = districtAt(cx, cz);
-      const tall = d.id === 'downtown' ? 1.6 : d.id === 'central' ? 1.2 : 1.0;
-      const count = diceInt(dice, 1, 3);
-      for (let b = 0; b < count; b += 1) {
-        const w = diceRange(dice, 14, 26);
-        const dep = diceRange(dice, 14, 26);
-        const h = diceRange(dice, 10, 42) * tall;
+  const lamps = [];
+  // One or two buildings per block, kept clear of the named spots.
+  for (let bx = -150; bx <= 150; bx += 60) {
+    for (let bz = -150; bz <= 150; bz += 60) {
+      if (nearSpot(bx, bz, 20)) continue;
+      const tall = Math.abs(bx) <= 60 && Math.abs(bz) <= 60;
+      const count = rnd() < 0.45 ? 2 : 1;
+      for (let i = 0; i < count; i += 1) {
+        const ox = count === 1 ? 0 : (i === 0 ? -11 : 11);
+        const oz = count === 1 ? 0 : (i === 0 ? -11 : 11);
+        const w = 16 + rnd() * 10;
+        const d = 16 + rnd() * 10;
+        const h = tall ? 26 + rnd() * 34 : 8 + rnd() * 16;
         buildings.push({
-          x: cx + diceRange(dice, -12, 12),
-          z: cz + diceRange(dice, -12, 12),
-          w,
-          d: dep,
-          h,
-          color: dicePick(dice, LOOK.buildingColors),
-          district: d.id,
+          x: bx + ox, z: bz + oz, w, d, h,
+          hue: 0.55 + rnd() * 0.15,
+          roof: rnd(),
         });
       }
     }
   }
-  // Streetlamps along every avenue, both sides, every other block.
-  const lamps = [];
-  for (const a of AVENUES) {
-    for (const s of STREETS) {
-      if ((Math.round(a / 88) + Math.round(s / 88)) % 2 === 0) {
-        lamps.push({ x: a + 8, z: s + 8 });
-        lamps.push({ x: a - 8, z: s - 8 });
-      }
+  // Lamps stand at the corners where avenues meet streets.
+  for (let ax = -180; ax <= 180; ax += 60) {
+    for (let az = -180; az <= 180; az += 60) {
+      if (rnd() < 0.8) lamps.push({ x: ax + 9, z: az + 9 });
     }
   }
-  // Palm trees on the marina and harbor sidewalks.
-  const palms = [];
-  for (let i = 0; i < 48; i += 1) {
-    const side = dicePick(dice, [-1, 1]);
-    palms.push({
-      x: diceRange(dice, 100, 320) * side,
-      z: diceRange(dice, 120, 320),
-    });
-  }
+  const gateRoutes = {
+    drag: [
+      { x: 120, z: 120 },
+      { x: 120, z: -60 },
+    ],
+    sprint: [
+      { x: 0, z: 120 },
+      { x: 0, z: 30 },
+      { x: 60, z: -60 },
+      { x: 120, z: -120 },
+    ],
+    circuit: [
+      { x: 120, z: 120 },
+      { x: 0, z: 120 },
+      { x: -120, z: 60 },
+      { x: -120, z: -120 },
+      { x: 0, z: -120 },
+      { x: 120, z: -60 },
+    ],
+  };
   return {
     seed,
-    districts: DISTRICTS,
-    avenues: AVENUES,
-    streets: STREETS,
+    spots: SPOTS,
     buildings,
     lamps,
-    palms,
-    spots: SPOTS,
-    gateRoutes: GATE_ROUTES,
+    gateRoutes,
+    districtAt,
+    half: WORLD.half,
+    block: WORLD.block,
+    road: WORLD.road,
   };
-}
-
-export function ventureSpot(city, ventureId) {
-  const map = {
-    'solmar-laundry': city.spots.laundry,
-    'palm-wash': city.spots.carWash,
-    'sunset-taxi': city.spots.taxiOffice,
-    'neon-palms': city.spots.nightclub,
-  };
-  return map[ventureId] || city.spots.plaza;
-}
-
-export function gateChain(city, raceId) {
-  return (city.gateRoutes[raceId] || []).slice();
-}
-
-export function spotByLabel(city, label) {
-  for (const key of Object.keys(city.spots)) {
-    if (city.spots[key].label === label) return city.spots[key];
-  }
-  return city.spots.plaza;
 }

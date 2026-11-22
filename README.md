@@ -2,7 +2,7 @@
 [![rank](https://make.fun/badge/gta6-01/mekzibnn/gta6-01/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![reward](https://make.fun/badge/gta6-01/mekzibnn/gta6-01/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 
-# Solmar Heat — Streets of the Sun
+# SOLMAR HEAT — sun-soaked open-world crime: 12 story missions, 5-star dispatch with RAM/PIT units and Air One, exploding cars and burning wrecks, district standing, weapon wheel, crew, races, empire, garage, respect, saves, radio
 
 A 3D open-world crime game for the make.fun **gta6-01** bounty ($1,666).
 Leo Marin starts with a stolen car and a fixer on the phone; by the end of
@@ -13,6 +13,17 @@ the story he owns half the city.
 - **Drive** — steal cars, outrun the police, lose the heat, survive Air One.
 - **Twelve story missions** — from Wheels Up to Crew Up, with payouts that
   grow from $400 to $7,500.
+- **Exploding cars** — bring a car to zero health and it blows up: fireball,
+  smoke, debris, screen shake. The burning wreck stays in the world, still
+  on fire, still in the way.
+- **District standing** — Solmar is five districts (Marina, Old Town, Docks,
+  Hills, Downtown). Respect is tracked per district; work a district and
+  it learns your name.
+- **RAM and PIT units** — at three stars the dispatch sends specialists: a
+  heavy RAM SUV that tries to run you off the road, and a PIT interceptor
+  that slides alongside your rear quarter and spins you out.
+- **Weapon wheel** — hold Q (or Tab) to open the radial wheel, pick one of
+  four weapons, release to confirm.
 - **Buy businesses** — a laundry, a car wash, a taxi company, a nightclub.
   They pay every game hour; the club pays double at night.
 - **Hire a crew** — Milo (handling), Vera (wanted decay), Tank (damage).
@@ -33,8 +44,9 @@ node serve.ts
 ```
 
 Controls: **WASD / arrows** drive and walk, **E** enter a car or a shop,
-**Q** leave a car, **Shift** run, **Space** nitro, **F** punch, **G** shoot,
-**X** abandon a race, **R** radio, **P** pause, **1–9** buy in a shop.
+**Q** hold for the weapon wheel (tap to leave a car), **Shift** run,
+**Space** nitro, **F** punch, **G** shoot, **X** abandon a race, **R** radio,
+**P** pause, **1–9** buy in a shop.
 
 ## How it is built
 
@@ -45,8 +57,10 @@ Controls: **WASD / arrows** drive and walk, **E** enter a car or a shop,
 - `main.ts` copies `game/` and `screenshots/` to `/output` and writes the
   dossier the judge reads.
 
-## v6
+## v7
 
 The whole game is rewritten from scratch in a single round: every module
 in `game/src/` is new code — same game, same features, fresh structure —
-so the transcripts account for the code.
+plus four new systems (exploding cars and burning wrecks, district
+standing, RAM/PIT police units, and a hold-Q weapon wheel), so the
+transcripts account for the code.

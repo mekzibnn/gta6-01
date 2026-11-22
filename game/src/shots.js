@@ -1,65 +1,80 @@
-// The screenshot scenes behind ?shot=cover|drive|mission|night (v6 rewrite).
-// Each shot stages one fixed moment for the entry's screenshots: a four-star
-// chase at golden hour with Air One parked ahead below the mission banner
-// (cover), a golden-hour cruise in a garage-tuned sport car (drive), the
-// Empire Rising mission at the taxi office with the empire widget showing
-// (mission), and downtown after dark with the lamps lit (night). main.js
-// calls stageShot for the shot named in the URL; this module only names the
-// shots and what each one needs, so the dossier and the playtest can list
-// them without booting the game.
+// Solmar Heat v7 — staged screenshots.
+// The four dossier shots are not random gameplay: each one sets the world
+// to a chosen moment (golden-hour chase, tuned cruise, empire at the
+// laundry, night pursuit) and parks the camera, so the screenshot driver
+// just waits for __shotReady and captures. main.js calls stageShot() when
+// the URL carries ?shot=.
 
-export const SHOTS = [
-  {
-    id: 'cover',
-    name: '1-cover.jpg',
-    query: '?shot=cover&seed=1',
-    description: 'Cover: a four-star chase at golden hour, Air One parked ahead below the mission banner',
-    wanted: 4,
-    heli: true,
-    hour: 17.3,
-  },
-  {
-    id: 'drive',
-    name: '2-drive.jpg',
-    query: '?shot=drive&seed=1',
-    description: 'Drive: golden-hour cruise in a garage-tuned sport car — Race engine, sunset-orange paint, two nitro charges',
-    wanted: 0,
-    heli: false,
-    hour: 17.6,
-  },
-  {
-    id: 'mission',
-    name: '3-mission.jpg',
-    query: '?shot=mission&seed=1',
-    description: 'Mission: Empire Rising (mission 11) at Sunset Taxi Co. — the first business is Leo\'s, the empire widget shows in the HUD',
-    wanted: 0,
-    heli: false,
-    hour: 17.3,
-  },
-  {
-    id: 'night',
-    name: '4-night.jpg',
-    query: '?shot=night&seed=1',
-    description: 'Night: downtown after dark — streetlamps lit, headlights on, nitro burning, Air One circling',
-    wanted: 0,
-    heli: true,
-    hour: 22,
-  },
-];
+import { spawnCar, applyEngine } from './vehicles.js';
+import { spawnCop } from './actors.js';
+import { showBanner } from './hud.js';
 
-export function shotById(id) {
-  return SHOTS.find((s) => s.id === id) || null;
+export function stageShot(world, name) {
+  world.shot = name;
+  const p = world.player;
+  if (name === 'cover') {
+    world.clock.hour = 18.0;
+    p.wanted = 4;
+    p.x = 0;
+    p.z = 60;
+    const car = spawnCar('sport', 0, 60, 0);
+    applyEngine(car, 2);
+    car.color = 0xff7a1a;
+    world.cars.push(car);
+    world.car = car;
+    p.inCar = true;
+    world.garage.nitro = 2;
+    world.heli.active = true;
+    world.cops = [spawnCop(-14, 78, 'ram'), spawnCop(14, 40, 'pit'), spawnCop(-30, 30, 'patrol')];
+    world.wrecks.push({ x: -18, z: 88, heading: 0.6, model: 'sedan', color: 0x8a94a6, t: 5, cold: false });
+    world.mission.index = 0;
+    world.mission.step = 0;
+    world.camFixed = { pos: [-16, 7, 34], look: [0, 2, 70] };
+    showBanner(world.hud, 'Drive to the Garage — do not get busted');
+  } else if (name === 'drive') {
+    world.clock.hour = 17.8;
+    p.x = 0;
+    p.z = 100;
+    const car = spawnCar('sport', 0, 100, 0);
+    applyEngine(car, 2);
+    car.color = 0xff7a1a;
+    world.cars.push(car);
+    world.car = car;
+    p.inCar = true;
+    world.garage.engine = 2;
+    world.garage.nitro = 2;
+    world.garage.paint = 'Sunset Orange';
+    world.wrecks.push({ x: 12, z: 130, heading: 0.3, model: 'taxi', color: 0xf2c200, t: 8, cold: false });
+    world.camFixed = null;
+  } else if (name === 'mission') {
+    world.clock.hour = 17.5;
+    world.empire.owned['solmar-laundry'] = { level: 1 };
+    world.mission.index = 10;
+    world.mission.step = 0;
+    const spot = world.city.spots.laundry;
+    p.x = spot.x;
+    p.z = spot.z + 6;
+    world.camFixed = { pos: [spot.x - 18, 9, spot.z - 14], look: [spot.x, 2, spot.z] };
+  } else if (name === 'night') {
+    world.clock.hour = 22.5;
+    p.wanted = 3;
+    p.x = 0;
+    p.z = 0;
+    const car = spawnCar('sport', 0, 0, 0);
+    applyEngine(car, 2);
+    car.color = 0xff7a1a;
+    car.nitroBurn = 2;
+    world.cars.push(car);
+    world.car = car;
+    p.inCar = true;
+    world.garage.nitro = 2;
+    world.heli.active = true;
+    world.cops = [spawnCop(-12, 22, 'ram'), spawnCop(16, -14, 'pit')];
+    world.wrecks.push({ x: -10, z: -30, heading: 1.2, model: 'sedan', color: 0x8a94a6, t: 12, cold: false });
+    world.camFixed = null;
+  }
 }
 
-export function shotByName(name) {
-  return SHOTS.find((s) => s.name === name) || null;
-}
-
-export function shotQuery(id) {
-  const shot = shotById(id);
-  return shot ? shot.query : '?shot=cover&seed=1';
-}
-
-export function shotList() {
-  return SHOTS.map((s) => ({ name: s.name, query: s.query, description: s.description }));
+export function shotNames() {
+  return ['cover', 'drive', 'mission', 'night'];
 }

@@ -1,103 +1,89 @@
-// The street race series (v6 rewrite).
-// Three illegal events run on the city roads after dark: a drag down the
-// pier road, a sprint across town, and a circuit around the blocks. Pay the
-// entry fee, chase the white gate rings in order, beat the par time for the
-// full prize. Rain pays a bonus. Quitting mid-race (X) forfeits the fee.
+// Solmar Heat v7 — the street series.
+// Three races, one office: Drag is a straight shot, Sprint is four gates
+// across town, Circuit is six gates around the loop. Entry costs money,
+// winning pays it back with interest — and rain pays a bonus on top.
 
-import { SERIES } from './config.js';
-import { gateChain } from './city.js';
 import { rainBonus } from './weather.js';
 
+export const RACES = [
+  { id: 'drag', name: 'Drag', fee: 100, prize: 400, gates: 2 },
+  { id: 'sprint', name: 'Marina Sprint', fee: 150, prize: 600, gates: 4 },
+  { id: 'circuit', name: 'Strip Circuit', fee: 300, prize: 1200, gates: 6 },
+];
+
 export function initRaces() {
-  return {
-    won: 0,
-    best: {},
-    active: null,
-    run: 0,
-  };
+  return { active: null, won: 0, best: {} };
 }
 
-export function raceDef(raceId) {
-  return SERIES.list.find((r) => r.id === raceId) || null;
+export function raceDef(id) {
+  return RACES.find((r) => r.id === id) || null;
 }
 
-export function startRace(races, raceId, cash, city) {
-  const def = raceDef(raceId);
-  if (!def) return { ok: false, reason: 'no such race' };
-  if (races.active) return { ok: false, reason: 'already racing' };
-  if (cash < def.fee) return { ok: false, reason: 'not enough cash' };
-  const gates = gateChain(city, raceId);
-  if (gates.length < def.gates) return { ok: false, reason: 'no route' };
-  races.active = {
-    id: raceId,
-    gate: 0,
-    gates,
-    elapsed: 0,
-    fee: def.fee,
-  };
-  races.run += 1;
-  return { ok: true, cost: def.fee, race: def };
-}
-
-export function raceActive(races) {
-  return races.active !== null;
-}
-
-export function raceTick(races, dt) {
-  if (!races.active) return;
-  races.active.elapsed += dt;
-}
-
-export function raceGatePassed(races, x, z) {
-  if (!races.active) return false;
-  const next = races.active.gates[races.active.gate];
-  if (!next) return false;
-  const dx = x - next.x;
-  const dz = z - next.z;
-  const radius = SERIES.gateRadius;
-  if (dx * dx + dz * dz > radius * radius) return false;
-  races.active.gate += 1;
+export function startRace(races, player, id) {
+  const def = raceDef(id);
+  if (!def || races.active) return false;
+  if (player.cash < def.fee) return false;
+  player.cash -= def.fee;
+  races.active = { id, gate: 0, t: 0 };
   return true;
+}
+
+export function raceGatePassed(races) {
+  if (!races.active) return false;
+  races.active.gate += 1;
+  return raceFinished(races);
 }
 
 export function raceFinished(races) {
   if (!races.active) return false;
-  return races.active.gate >= races.active.gates.length;
+  const def = raceDef(races.active.id);
+  return def ? races.active.gate >= def.gates : false;
 }
 
-export function finishRace(races, weather) {
-  if (!races.active) return { ok: false, reason: 'no race running' };
+export function finishRace(races, player, weather) {
+  if (!races.active) return 0;
   const def = raceDef(races.active.id);
-  const seconds = races.active.elapsed;
-  const underPar = seconds <= def.par;
-  let prize = underPar ? def.prize : Math.round(def.prize * SERIES.latePrize);
-  prize = Math.round(prize * rainBonus(weather));
+  const prize = Math.round(def.prize * rainBonus(weather));
+  player.cash += prize;
   races.won += 1;
-  const prev = races.best[def.id];
-  if (typeof prev !== 'number' || seconds < prev) races.best[def.id] = Math.round(seconds * 10) / 10;
+  const prev = races.best[races.active.id];
+  if (prev === undefined || races.active.t < prev) races.best[races.active.id] = Math.round(races.active.t * 10) / 10;
   races.active = null;
-  return { ok: true, prize, seconds: Math.round(seconds * 10) / 10, underPar };
+  return prize;
 }
 
 export function abandonRace(races) {
-  if (!races.active) return false;
   races.active = null;
-  return true;
 }
 
-export function raceBest(races, raceId) {
-  return races.best[raceId];
+export function raceTick(races, player, city, dt, weather) {
+  if (!races.active) return null;
+  races.active.t += dt;
+  const gates = city.gateRoutes[races.active.id] || [];
+  const target = gates[races.active.gate];
+  if (!target) return null;
+  const dx = target.x - player.x;
+  const dz = target.z - player.z;
+  if (dx * dx + dz * dz < 144) {
+    const finished = raceGatePassed(races);
+    if (finished) {
+      const prize = finishRace(races, player, weather);
+      return { finished: true, prize };
+    }
+    return { gate: races.active.gate };
+  }
+  return null;
 }
 
 export function serializeRaces(races) {
-  return { won: races.won, best: races.best, run: races.run };
+  return { won: races.won, best: races.best };
 }
 
 export function restoreRaces(data) {
-  const fresh = initRaces();
-  if (!data) return fresh;
-  fresh.won = typeof data.won === 'number' ? data.won : 0;
-  fresh.best = data.best && typeof data.best === 'object' ? data.best : {};
-  fresh.run = typeof data.run === 'number' ? data.run : 0;
-  return fresh;
+  const races = initRaces();
+  if (data && typeof data === 'object') {
+    if (typeof data.won === 'number') races.won = Math.max(0, data.won);
+    if (data.best && typeof data.best === 'object') races.best = data.best;
+  }
+  return races;
 }

@@ -1,18 +1,6 @@
-# Solmar Heat — Streets of the Sun (gta 06 v6, make.fun gta6-01 entry)
-#
-# This file is the license for the entry's own code: the game in game/,
-# the screenshots, and the entry tooling. The 3D engine it uses is
-# three.js, vendored under game/vendor/ with its own license file
-# (game/vendor/three.LICENSE). The MIT terms below cover this entry.
-#
-# v6 rewrites the whole game from scratch in a single round: every module
-# in game/src/ is new code under the same MIT terms, same game, same
-# features, fresh structure — so the transcripts account for the code.
-SPDX-License-Identifier: MIT
-
 MIT License
 
-Copyright (c) 2026 make.fun
+Copyright (c) 2026 mekzibnn
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

@@ -1,9 +1,4 @@
-# Solmar Heat (gta 06 v6) — files the entry never ships. Keep this list
-# short: everything the game needs to run is committed, everything else
-# (build output, local tooling, editor state) stays out.
-out/
 node_modules/
+out/
 .DS_Store
 *.log
-coverage/
-.playwright/

@@ -1,72 +1,56 @@
-// Keyboard and mouse input (v6 rewrite).
-// Held keys steer and drive; one-shot presses (enter a car, open a shop,
-// buy an item) fire once per press. The loop reads the state through
-// readKeys every frame, so a key held across frames keeps working and a
-// key tapped once never double-fires.
+// Solmar Heat v7 — keyboard and mouse.
+// Tracks which keys are held and which were just pressed. readKeys()
+// returns the driving state plus the edge-triggered presses since the
+// last call, then clears them — so a tap is seen exactly once.
 
-export function initInput() {
+export function initInput(canvas) {
   const input = {
-    held: new Set(),
-    pressed: new Set(),
-    choice: -1,
+    keys: {},
+    pressed: {},
     mouse: { x: 0, y: 0, down: false },
   };
-  window.addEventListener('keydown', (e) => {
-    if (e.repeat) return;
-    input.held.add(e.key.toLowerCase());
-    input.pressed.add(e.key.toLowerCase());
-    const num = Number(e.key);
-    if (num >= 1 && num <= 9) input.choice = num - 1;
-    if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(e.key.toLowerCase())) {
-      e.preventDefault();
-    }
-  });
-  window.addEventListener('keyup', (e) => {
-    input.held.delete(e.key.toLowerCase());
-  });
+  const down = (e) => {
+    if (['Space', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+    if (!input.keys[e.code]) input.pressed[e.code] = true;
+    input.keys[e.code] = true;
+  };
+  const up = (e) => {
+    input.keys[e.code] = false;
+  };
+  window.addEventListener('keydown', down);
+  window.addEventListener('keyup', up);
   window.addEventListener('blur', () => {
-    input.held.clear();
-    input.pressed.clear();
+    input.keys = {};
   });
-  window.addEventListener('mousemove', (e) => {
-    input.mouse.x = e.clientX;
-    input.mouse.y = e.clientY;
-  });
-  window.addEventListener('mousedown', () => { input.mouse.down = true; });
-  window.addEventListener('mouseup', () => { input.mouse.down = false; });
+  if (canvas) {
+    canvas.addEventListener('pointermove', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      input.mouse.x = e.clientX - rect.left;
+      input.mouse.y = e.clientY - rect.top;
+    });
+    canvas.addEventListener('pointerdown', () => {
+      input.mouse.down = true;
+    });
+    canvas.addEventListener('pointerup', () => {
+      input.mouse.down = false;
+    });
+  }
   return input;
 }
 
 export function readKeys(input) {
-  const held = input.held;
-  const pressed = input.pressed;
-  const out = {
-    up: held.has('w') || held.has('arrowup'),
-    down: held.has('s') || held.has('arrowdown'),
-    left: held.has('a') || held.has('arrowleft'),
-    right: held.has('d') || held.has('arrowright'),
-    run: held.has('shift'),
-    nitro: held.has(' '),
-    punch: pressed.has('f'),
-    shoot: pressed.has('g') || input.mouse.down,
-    enter: pressed.has('e'),
-    exit: pressed.has('q'),
-    interact: pressed.has('e'),
-    escape: pressed.has('escape'),
-    abandon: pressed.has('x'),
-    radio: pressed.has('r'),
-    choice: input.choice,
-    any: held.size > 0 || pressed.size > 0,
+  const k = input.keys;
+  const justPressed = input.pressed;
+  input.pressed = {};
+  return {
+    up: !!(k.KeyW || k.ArrowUp),
+    down: !!(k.KeyS || k.ArrowDown),
+    left: !!(k.KeyA || k.ArrowLeft),
+    right: !!(k.KeyD || k.ArrowRight),
+    run: !!(k.ShiftLeft || k.ShiftRight),
+    nitro: !!k.Space,
+    heldQ: !!k.KeyQ,
+    heldTab: !!k.Tab,
+    justPressed,
   };
-  pressed.clear();
-  input.choice = -1;
-  return out;
-}
-
-export function isDown(input, key) {
-  return input.held.has(key.toLowerCase());
-}
-
-export function wasPressed(input, key) {
-  return input.pressed.has(key.toLowerCase());
 }

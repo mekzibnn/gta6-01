@@ -1,117 +1,125 @@
-// The crowd — pedestrians on the sidewalks (v6 rewrite).
-// Solmar's streets are alive because people walk them: strollers on the
-// sidewalk loops, shoppers paused at storefront windows, and everyone
-// scattering when a siren or a gunshot passes. The crowd is a flat list the
-// renderer draws and the game logic scares; main.js owns the tick.
-
-import { spawnWalker, advanceWalker, scareWalkers } from './actors.js';
-import { makeDice, dicePick } from './random.js';
-import { WORLD } from './config.js';
+// Solmar Heat v7 — the crowd.
+// Pedestrians walk the sidewalks on fixed routes. They are not decoration:
+// a chase, a gunshot, or a car bomb sends them running, and panic is
+// contagious — one fleeing walker sets off everyone near them. Shoppers
+// linger by the storefronts, which is how the city feels inhabited.
 
 export function initCrowd(dice, city, count) {
-  const crowd = [];
+  const peds = [];
   for (let i = 0; i < count; i += 1) {
-    crowd.push(spawnWalker(dice, city));
+    const avenue = dice.pick([-180, -120, -60, 0, 60, 120, 180]);
+    const street = dice.pick([-180, -120, -60, 0, 60, 120, 180]);
+    const vertical = dice.chance(0.5);
+    const x = vertical ? avenue + dice.pick([-9, 9]) : dice.range(-180, 180);
+    const z = vertical ? dice.range(-180, 180) : street + dice.pick([-9, 9]);
+    const ped = {
+      x, z,
+      heading: 0,
+      speed: 0,
+      state: 'walk',
+      panic: 0,
+      route: [],
+      routeAt: 0,
+      color: dice.pick([0xd94f4f, 0x4f7ad9, 0x4fd97a, 0xd9c24f, 0x9a4fd9, 0xe8e8e8]),
+    };
+    const along = vertical ? 'z' : 'x';
+    const fixed = vertical ? x : z;
+    const stops = [];
+    for (let k = 0; k < 4; k += 1) {
+      const at = dice.range(-180, 180);
+      stops.push(along === 'z' ? { x: fixed, z: at } : { x: at, z: fixed });
+    }
+    ped.route = stops;
+    ped.routeAt = dice.int(0, 3);
+    peds.push(ped);
   }
-  return crowd;
+  return peds;
 }
 
-export function tickCrowd(crowd, player, dt) {
-  for (const w of crowd) {
-    advanceWalker(w, dt);
-    // Panic spreads: a fleeing ped scares the neighbours around them.
-    if (w.state === 'flee') {
-      for (const other of crowd) {
-        if (other === w || other.state === 'flee') continue;
-        const dx = other.x - w.x;
-        const dz = other.z - w.z;
-        if (dx * dx + dz * dz < 12 * 12) {
+export function tickCrowd(peds, world, dt) {
+  for (const ped of peds) {
+    if (ped.state === 'flee') {
+      ped.panic = Math.max(0, ped.panic - dt * 0.4);
+      if (ped.panic <= 0) ped.state = 'walk';
+      const dx = ped.x - world.player.x;
+      const dz = ped.z - world.player.z;
+      const d = Math.sqrt(dx * dx + dz * dz) || 1;
+      ped.x += (dx / d) * 9 * dt;
+      ped.z += (dz / d) * 9 * dt;
+      ped.heading = Math.atan2(dx / d, dz / d);
+      // Panic spreads: a fleeing walker sets off everyone close by.
+      for (const other of peds) {
+        if (other === ped || other.state === 'flee') continue;
+        const ox = other.x - ped.x;
+        const oz = other.z - ped.z;
+        if (ox * ox + oz * oz < 144) {
           other.state = 'flee';
           other.panic = 2;
         }
       }
+      continue;
     }
-    // A walker that fled far off its route gets a fresh loop near the player.
-    if (Math.abs(w.x) > WORLD.halfSize - 4 || Math.abs(w.z) > WORLD.halfSize - 4) {
-      const fresh = spawnWalker(makeDice((Math.random() * 1e9) | 0), { avenues: [-88, 0, 88], streets: [-88, 0, 88] });
-      w.x = fresh.x;
-      w.z = fresh.z;
-      w.route = fresh.route;
-      w.leg = 0;
-      w.state = 'stroll';
+    if (!ped.route || ped.route.length === 0) continue;
+    const target = ped.route[ped.routeAt % ped.route.length];
+    const dx = target.x - ped.x;
+    const dz = target.z - ped.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist < 1.5) {
+      ped.routeAt += 1;
+      continue;
     }
+    ped.x += (dx / dist) * 2.2 * dt;
+    ped.z += (dz / dist) * 2.2 * dt;
+    ped.heading = Math.atan2(dx / dist, dz / dist);
+    ped.speed = 2.2;
   }
-  return crowd;
 }
 
-export function crowdNear(crowd, x, z, radius) {
+export function crowdNear(peds, x, z, radius) {
   let n = 0;
-  for (const w of crowd) {
-    const dx = w.x - x;
-    const dz = w.z - z;
+  for (const ped of peds) {
+    const dx = ped.x - x;
+    const dz = ped.z - z;
     if (dx * dx + dz * dz < radius * radius) n += 1;
   }
   return n;
 }
 
-export function crowdOnRoute(crowd) {
-  return crowd.filter((w) => w.route && w.route.length > 1).length;
+export function crowdOnRoute(peds) {
+  return peds.filter((p) => p.route && p.route.length > 1).length;
 }
 
-export function scareCrowd(crowd, x, z, radius) {
-  return scareWalkers(crowd, x, z, radius);
+export function scareCrowd(peds, x, z, radius) {
+  for (const ped of peds) {
+    const dx = ped.x - x;
+    const dz = ped.z - z;
+    if (dx * dx + dz * dz < radius * radius) {
+      ped.state = 'flee';
+      ped.panic = 2;
+    }
+  }
 }
 
 export function shopperSpots(dice, city) {
-  // Window-shoppers linger outside the four businesses and the garage.
-  const fronts = [
-    city.spots.laundry,
-    city.spots.carWash,
-    city.spots.taxiOffice,
-    city.spots.nightclub,
-    city.spots.garage,
-  ];
-  const shoppers = [];
-  for (const front of fronts) {
-    const n = 2 + Math.floor(dice() * 2);
-    for (let i = 0; i < n; i += 1) {
-      shoppers.push({
-        kind: 'shopper',
-        x: front.x + (dice() * 2 - 1) * 10,
-        z: front.z + (dice() * 2 - 1) * 10,
-        heading: dice() * Math.PI * 2,
-        speed: 0,
-        route: [{ x: front.x, z: front.z }],
-        leg: 0,
-        state: 'browse',
-        panic: 0,
-        color: dicePick(dice, [0xe2725b, 0x4f9d8f, 0xe8b04b, 0x7a6ff0]),
-        dwell: dice() * 8 + 2,
-      });
+  const spots = [];
+  const keys = ['gunStore', 'diner', 'laundry', 'carWash'];
+  for (const key of keys) {
+    const s = city.spots[key];
+    if (!s) continue;
+    for (let i = 0; i < 3; i += 1) {
+      spots.push({ x: s.x + dice.range(-8, 8), z: s.z + dice.range(-8, 8) });
     }
   }
-  return shoppers;
+  return spots;
 }
 
-export function tickShoppers(shoppers, dt) {
-  for (const s of shoppers) {
-    s.dwell -= dt;
-    if (s.dwell <= 0) {
-      // Drift to a neighbouring storefront and browse there instead.
-      s.x += (Math.random() * 2 - 1) * 14;
-      s.z += (Math.random() * 2 - 1) * 14;
-      s.dwell = Math.random() * 8 + 2;
-      s.heading = Math.random() * Math.PI * 2;
+export function tickShoppers(shoppers, world, dt) {
+  for (const shopper of shoppers) {
+    shopper.t = (shopper.t || 0) + dt;
+    if (shopper.t > 6) {
+      shopper.t = 0;
+      shopper.x += (Math.random() - 0.5) * 4;
+      shopper.z += (Math.random() - 0.5) * 4;
     }
   }
-  return shoppers;
-}
-
-export function crowdSnapshot(crowd) {
-  return {
-    total: crowd.length,
-    strolling: crowd.filter((w) => w.state === 'stroll').length,
-    fleeing: crowd.filter((w) => w.state === 'flee').length,
-    browsing: crowd.filter((w) => w.state === 'browse').length,
-  };
 }

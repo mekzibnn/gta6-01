@@ -1,213 +1,286 @@
-// People — the player, the crowd, the cops, the crew (v6 rewrite).
-// Everyone on foot shares one body: a position, a heading, a speed and a
-// mood. The player walks, runs and fights; pedestrians stroll the sidewalks
-// and scatter when a chase passes; cops close in and try to bust the player;
-// hired crew mates trail the player and throw punches beside him.
+// Solmar Heat v7 — people.
+// Everyone on foot and everyone behind a wheel lives here: the player,
+// the walkers on the sidewalks, the cops (patrol, RAM and PIT), and the
+// hired mates who watch Leo's back. Combat is simple and close-range:
+// fists up close, guns at a distance, and a cop who sits on you long
+// enough will bust you.
 
-import { WORLD } from './config.js';
-import { dicePick, diceRange } from './random.js';
+import { HEAT, POLICE, WEAPONS } from './config.js';
+import { spawnCar, damageCar, carDistance } from './vehicles.js';
 
 export function spawnPlayer(x, z) {
   return {
-    kind: 'player',
-    x,
-    z,
+    x, z,
     heading: 0,
     speed: 0,
-    walkSpeed: 5,
-    runSpeed: 9,
-    health: 100,
-    cash: 5000,
-    wanted: 0,
+    cash: 400,
     respect: 0,
+    districtStanding: { marina: 0, oldtown: 0, docks: 0, hills: 0, downtown: 0 },
+    wanted: 0,
+    health: 100,
     inCar: false,
-    carId: null,
     weapon: 0,
-    ammo: { 1: 18, 2: 60, 3: 8 },
-    punching: 0,
-    shooting: 0,
+    weapons: [true, false, false, false],
+    color: 0xc1272d,
   };
 }
 
-export function spawnWalker(dice, city) {
-  const route = walkerRoute(dice, city);
+export function spawnWalker(x, z) {
   return {
-    kind: 'ped',
-    id: `ped-${Math.floor(dice() * 1e9)}`,
-    x: route[0].x,
-    z: route[0].z,
-    heading: 0,
-    speed: diceRange(dice, 1.2, 2.4),
-    route,
-    leg: 0,
-    state: 'stroll',
+    x, z,
+    heading: Math.random() * Math.PI * 2,
+    speed: 0,
+    state: 'walk',
     panic: 0,
-    color: dicePick(dice, [0xe2725b, 0x4f9d8f, 0xe8b04b, 0x7a6ff0, 0xc65d7b, 0x5b8c5a]),
+    route: null,
+    routeAt: 0,
+    color: 0x888888,
   };
 }
 
-export function walkerRoute(dice, city) {
-  // A sidewalk loop: pick a block, walk its four corners, repeat.
-  const ax = dicePick(dice, city.avenues);
-  const az = dicePick(dice, city.streets);
-  const half = WORLD.block / 2 - 6;
-  return [
-    { x: ax - half, z: az - half },
-    { x: ax + half, z: az - half },
-    { x: ax + half, z: az + half },
-    { x: ax - half, z: az + half },
-  ];
+export function spawnCop(x, z, kind) {
+  const model = kind === 'ram' ? 'ram' : kind === 'pit' ? 'pit' : 'cop';
+  const car = spawnCar(model, x, z, 0);
+  car.kind = kind || 'patrol';
+  car.bustMeter = 0;
+  car.pitSide = 1;
+  car.pitTimer = 0;
+  return car;
 }
 
-export function spawnCop(x, z, stars) {
-  return {
-    kind: 'cop',
-    x,
-    z,
-    heading: 0,
-    speed: 7 + stars * 0.6,
-    health: 100,
-    state: 'chase',
-    bustRange: 2.2,
-    swings: 0,
-  };
+export function spawnMate(id, x, z) {
+  const colors = { milo: 0x4f7ad9, vera: 0x9a4fd9, tank: 0x4fd97a };
+  return { id, x, z, heading: 0, speed: 0, state: 'follow', punchAt: 0, color: colors[id] || 0x888888 };
 }
 
-export function spawnMate(crewId, x, z) {
-  return {
-    kind: 'mate',
-    crewId,
-    x,
-    z,
-    heading: 0,
-    speed: 8,
-    health: 100,
-    state: 'follow',
-    punchCooldown: 0,
-  };
-}
-
-export function advanceWalker(w, dt) {
-  const target = w.route[w.leg];
-  const dx = target.x - w.x;
-  const dz = target.z - w.z;
-  const d = Math.sqrt(dx * dx + dz * dz);
-  const pace = w.state === 'flee' ? w.speed * 2.4 : w.speed;
-  if (d < 1.5) {
-    w.leg = (w.leg + 1) % w.route.length;
-    return w;
+export function movePlayer(player, input, dt, world) {
+  const run = input.run ? 11 : 6;
+  let mx = 0;
+  let mz = 0;
+  if (input.up) mz += 1;
+  if (input.down) mz -= 1;
+  if (input.left) mx -= 1;
+  if (input.right) mx += 1;
+  if (mx === 0 && mz === 0) {
+    player.speed = 0;
+    return 0;
   }
-  w.heading = Math.atan2(dx, dz);
-  w.x += (dx / d) * pace * dt;
-  w.z += (dz / d) * pace * dt;
-  if (w.panic > 0) w.panic -= dt;
-  else if (w.state === 'flee') w.state = 'stroll';
-  return w;
+  const len = Math.sqrt(mx * mx + mz * mz);
+  const step = run * dt;
+  const nx = player.x + (mx / len) * step;
+  const nz = player.z + (mz / len) * step;
+  let blocked = false;
+  for (const b of world.city.buildings) {
+    if (Math.abs(nx - b.x) < b.w / 2 + 0.6 && Math.abs(nz - b.z) < b.d / 2 + 0.6) { blocked = true; break; }
+  }
+  if (!blocked) {
+    const half = world.city.half;
+    player.x = Math.max(-half, Math.min(half, nx));
+    player.z = Math.max(-half, Math.min(half, nz));
+    player.heading = Math.atan2(mx / len, mz / len);
+    player.speed = run;
+    return step;
+  }
+  player.speed = 0;
+  return 0;
 }
 
-export function scareWalkers(walkers, x, z, radius) {
-  for (const w of walkers) {
-    const dx = w.x - x;
-    const dz = w.z - z;
-    const d = Math.sqrt(dx * dx + dz * dz);
-    if (d < radius) {
-      w.state = 'flee';
-      w.panic = 3;
-      // Run away from the scare, not toward it.
-      w.route = [{ x: w.x + (dx / (d || 1)) * 40, z: w.z + (dz / (d || 1)) * 40 }];
-      w.leg = 0;
+export function advanceWalker(walker, dt, world) {
+  if (walker.state === 'flee') {
+    walker.panic = Math.max(0, walker.panic - dt * 0.4);
+    if (walker.panic <= 0) walker.state = 'walk';
+    const dx = walker.x - world.player.x;
+    const dz = walker.z - world.player.z;
+    const d = Math.sqrt(dx * dx + dz * dz) || 1;
+    walker.x += (dx / d) * 9 * dt;
+    walker.z += (dz / d) * 9 * dt;
+    walker.heading = Math.atan2(dx / d, dz / d);
+    return;
+  }
+  if (!walker.route || walker.route.length === 0) return;
+  const target = walker.route[walker.routeAt % walker.route.length];
+  const dx = target.x - walker.x;
+  const dz = target.z - walker.z;
+  const dist = Math.sqrt(dx * dx + dz * dz);
+  if (dist < 1.5) {
+    walker.routeAt += 1;
+    return;
+  }
+  walker.x += (dx / dist) * 2.2 * dt;
+  walker.z += (dz / dist) * 2.2 * dt;
+  walker.heading = Math.atan2(dx / dist, dz / dist);
+  walker.speed = 2.2;
+}
+
+export function advanceCop(cop, world, dt) {
+  const player = world.player;
+  const target = world.car || player;
+  const tx = target.x;
+  const tz = target.z;
+  let aimX = tx;
+  let aimZ = tz;
+  let cruise = POLICE.patrolSpeed;
+  if (cop.kind === 'ram') {
+    cruise = POLICE.ramSpeed;
+    const lead = 0.6;
+    aimX = tx + Math.sin(target.heading || 0) * (target.speed || 0) * lead;
+    aimZ = tz + Math.cos(target.heading || 0) * (target.speed || 0) * lead;
+  } else if (cop.kind === 'pit') {
+    cruise = POLICE.pitSpeed;
+    cop.pitTimer += dt;
+    if (cop.pitTimer > 4) {
+      cop.pitTimer = 0;
+      cop.pitSide = -cop.pitSide;
+    }
+    const fx = Math.sin(target.heading || 0);
+    const fz = Math.cos(target.heading || 0);
+    const px = Math.cos(target.heading || 0) * cop.pitSide;
+    const pz = -Math.sin(target.heading || 0) * cop.pitSide;
+    aimX = tx - fx * 4 + px * 2.5;
+    aimZ = tz - fz * 4 + pz * 2.5;
+  }
+  const dx = aimX - cop.x;
+  const dz = aimZ - cop.z;
+  const dist = Math.sqrt(dx * dx + dz * dz);
+  if (dist > 1) {
+    const want = Math.atan2(dx, dz);
+    let diff = want - cop.heading;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    cop.heading += Math.max(-2.4 * dt, Math.min(2.4 * dt, diff));
+  }
+  cop.speed += (cruise - cop.speed) * Math.min(1, dt * 0.7);
+  cop.x += Math.sin(cop.heading) * cop.speed * dt;
+  cop.z += Math.cos(cop.heading) * cop.speed * dt;
+  const half = world.city.half;
+  if (Math.abs(cop.x) > half || Math.abs(cop.z) > half) {
+    cop.heading += Math.PI;
+    cop.x = Math.max(-half, Math.min(half, cop.x));
+    cop.z = Math.max(-half, Math.min(half, cop.z));
+  }
+  // Contact with the player's car: RAM hits hard, PIT spins it.
+  if (world.car && carDistance(cop, world.car) < 3.4) {
+    if (cop.kind === 'ram') {
+      damageCar(world.car, POLICE.ramDamage * dt * 2, world);
+      world.car.speed *= 0.85;
+    } else if (cop.kind === 'pit') {
+      world.car.heading += POLICE.pitSpin * dt * cop.pitSide;
+      world.car.speed *= 0.92;
+      damageCar(world.car, 6 * dt, world);
+    } else {
+      world.car.speed *= 0.94;
     }
   }
-  return walkers;
-}
-
-export function advanceCop(cop, player, dt) {
-  const dx = player.x - cop.x;
-  const dz = player.z - cop.z;
-  const d = Math.sqrt(dx * dx + dz * dz) || 1;
-  cop.heading = Math.atan2(dx, dz);
-  if (d > cop.bustRange) {
-    cop.x += (dx / d) * cop.speed * dt;
-    cop.z += (dz / d) * cop.speed * dt;
-  }
-  return cop;
 }
 
 export function copBusts(cop, player) {
-  const dx = player.x - cop.x;
-  const dz = player.z - cop.z;
-  return Math.sqrt(dx * dx + dz * dz) <= cop.bustRange;
+  const dx = cop.x - player.x;
+  const dz = cop.z - player.z;
+  const d = Math.sqrt(dx * dx + dz * dz);
+  // main.js keeps player.carSpeed fresh; if it is missing, assume the
+  // player is moving (a bust must never fire on a guess).
+  const speed = player.inCar
+    ? (player.carSpeed === undefined ? 99 : Math.abs(player.carSpeed))
+    : Math.abs(player.speed || 0);
+  return d < HEAT.bustRange && speed < 3;
 }
 
-export function advanceMate(mate, player, dt) {
+export function advanceMate(mate, world, dt) {
+  const player = world.player;
   const dx = player.x - mate.x;
   const dz = player.z - mate.z;
-  const d = Math.sqrt(dx * dx + dz * dz);
-  if (d > 4) {
-    mate.heading = Math.atan2(dx, dz);
-    mate.x += (dx / d) * mate.speed * dt;
-    mate.z += (dz / d) * mate.speed * dt;
+  const dist = Math.sqrt(dx * dx + dz * dz);
+  if (dist > 5) {
+    mate.x += (dx / dist) * 8 * dt;
+    mate.z += (dz / dist) * 8 * dt;
+    mate.heading = Math.atan2(dx / dist, dz / dist);
+    mate.speed = 8;
+  } else {
+    mate.speed = 0;
   }
-  if (mate.punchCooldown > 0) mate.punchCooldown -= dt;
-  return mate;
+  mate.punchAt -= dt;
+  if (mate.punchAt <= 0) {
+    matePunch(mate, world);
+    mate.punchAt = 0.8;
+  }
 }
 
-export function matePunch(mate, target, damage) {
-  if (mate.punchCooldown > 0) return 0;
-  const dx = target.x - mate.x;
-  const dz = target.z - mate.z;
-  if (Math.sqrt(dx * dx + dz * dz) > 3.5) return 0;
-  mate.punchCooldown = 1.2;
-  target.health -= damage;
-  return damage;
+export function matePunch(mate, world) {
+  for (const ped of world.peds || []) {
+    if (ped.state === 'flee' && carDistance(mate, ped) < 2.5) {
+      ped.panic = 3;
+      return true;
+    }
+  }
+  return false;
 }
 
-export function playerPunch(player, target, damageBoost) {
-  const dx = target.x - player.x;
-  const dz = target.z - player.z;
-  if (Math.sqrt(dx * dx + dz * dz) > 3) return 0;
-  const hit = 12 * (damageBoost || 1);
-  target.health -= hit;
-  player.punching = 0.25;
+export function playerPunch(player, world) {
+  let hit = false;
+  for (const ped of world.peds || []) {
+    if (carDistance(player, ped) < 2.5) {
+      ped.state = 'flee';
+      ped.panic = 2;
+      hit = true;
+    }
+  }
+  for (const cop of world.cops || []) {
+    if (carDistance(player, cop) < 2.5) {
+      damageCar(cop, 12, world);
+      player.wanted = Math.min(5, player.wanted + 1);
+      hit = true;
+    }
+  }
+  if (hit) (world.sfx || (world.sfx = [])).push('punch');
   return hit;
 }
 
-export function playerShoot(player, target, weapon, damageBoost) {
-  if (player.weapon === 0) return 0;
-  const slot = player.ammo[player.weapon];
-  if (!slot || slot <= 0) return 0;
-  player.ammo[player.weapon] -= 1;
-  const base = [0, 22, 16, 45][player.weapon] || 10;
-  const hit = base * (damageBoost || 1);
-  target.health -= hit;
-  player.shooting = 0.2;
-  return hit;
+export function playerShoot(player, world) {
+  const def = WEAPONS[player.weapon] || WEAPONS[0];
+  if (player.weapon === 0) return playerPunch(player, world);
+  const fx = Math.sin(player.heading);
+  const fz = Math.cos(player.heading);
+  let best = null;
+  let bestD = def.range;
+  const consider = (obj) => {
+    const dx = obj.x - player.x;
+    const dz = obj.z - player.z;
+    const d = Math.sqrt(dx * dx + dz * dz);
+    if (d > def.range || d < 0.5) return;
+    const dot = (dx * fx + dz * fz) / d;
+    if (dot < 0.9) return;
+    if (d < bestD) {
+      bestD = d;
+      best = obj;
+    }
+  };
+  for (const car of world.cars || []) consider(car);
+  for (const cop of world.cops || []) consider(cop);
+  for (const ped of world.peds || []) consider(ped);
+  (world.sfx || (world.sfx = [])).push('shot');
+  if (!best) return false;
+  if (best.health !== undefined) {
+    damageCar(best, def.damage, world);
+  } else {
+    best.state = 'flee';
+    best.panic = 3;
+  }
+  player.wanted = Math.min(5, player.wanted + 1);
+  return true;
 }
 
-export function hurtPlayer(player, amount, soak) {
-  const taken = amount * (1 - (soak || 0));
-  player.health -= taken;
-  if (player.health < 0) player.health = 0;
-  return taken;
+export function hurtPlayer(player, amount) {
+  player.health = Math.max(0, player.health - amount);
+  if (player.health <= 0) {
+    player.health = 100;
+    player.cash = Math.floor(player.cash * 0.9);
+    player.wanted = 0;
+    player.x = -6;
+    player.z = 150;
+    player.inCar = false;
+  }
 }
 
 export function healPlayer(player, amount) {
   player.health = Math.min(100, player.health + amount);
-  return player.health;
-}
-
-export function movePlayer(player, move, dt) {
-  // move: { x -1..1, z -1..1, run bool } — on-foot steering.
-  const pace = move.run ? player.runSpeed : player.walkSpeed;
-  const mx = move.x || 0;
-  const mz = move.z || 0;
-  const len = Math.sqrt(mx * mx + mz * mz) || 1;
-  player.x += (mx / len) * pace * dt * (mx || mz ? 1 : 0);
-  player.z += (mz / len) * pace * dt * (mx || mz ? 1 : 0);
-  if (mx || mz) player.heading = Math.atan2(mx, mz);
-  player.speed = (mx || mz) ? pace : 0;
-  const m = WORLD.halfSize - 4;
-  player.x = Math.max(-m, Math.min(m, player.x));
-  player.z = Math.max(-m, Math.min(m, player.z));
-  return player;
 }

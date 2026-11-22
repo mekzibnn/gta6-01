@@ -1,328 +1,297 @@
-// The HUD — a 2D canvas over the 3D view (v6 rewrite).
-// Every piece of the interface is a widget: a small function that knows
-// where it sits, what it shows, and when it hides. The HUD never takes
-// pointer input, so the game canvas keeps the mouse. Widgets read the live
-// game each frame; nothing here owns game state.
+// Solmar Heat v7 — the HUD.
+// A 2D canvas over the 3D view. Everything the player needs is on it:
+// cash, respect, health, the district they are standing in, the wanted
+// stars (with RAM and PIT tags when the specialists are out), the empire,
+// the minimap, and the weapon wheel. Labels sit above their bars — never
+// underneath them — and numbers get the full width they need.
+
+import { RESPECT, DISTRICT_TIERS, WEAPONS } from './config.js';
+import { districtAt } from './city.js';
 
 export function initHud(canvas) {
-  const ctx = canvas.getContext('2d');
   return {
     canvas,
-    ctx,
-    w: canvas.width,
-    h: canvas.height,
-    banner: null,
-    bannerUntil: 0,
-    prompt: null,
-    toast: null,
-    toastUntil: 0,
+    ctx: canvas.getContext('2d'),
+    banner: '',
+    bannerT: 0,
+    toast: '',
+    toastT: 0,
+    prompt: '',
+    w: 1280,
+    h: 720,
   };
 }
 
-export function resizeHud(hud, w, h) {
-  hud.canvas.width = w;
-  hud.canvas.height = h;
-  hud.w = w;
-  hud.h = h;
-  return hud;
+export function resizeHud(hud) {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  hud.canvas.width = Math.floor(hud.canvas.clientWidth * dpr) || 1280;
+  hud.canvas.height = Math.floor(hud.canvas.clientHeight * dpr) || 720;
+  hud.w = 1280;
+  hud.h = 720;
 }
 
-export function showBanner(hud, text, sub, seconds) {
-  hud.banner = { text, sub: sub || '' };
-  hud.bannerUntil = performance.now() / 1000 + (seconds || 4);
-  return hud;
+export function showBanner(hud, text) {
+  hud.banner = text;
+  hud.bannerT = 3.5;
 }
 
-export function showToast(hud, text, seconds) {
+export function showToast(hud, text) {
   hud.toast = text;
-  hud.toastUntil = performance.now() / 1000 + (seconds || 2.5);
-  return hud;
+  hud.toastT = 3;
 }
 
-export function showPrompt(hud, lines) {
-  hud.prompt = lines || null;
-  return hud;
+export function showPrompt(hud, text) {
+  hud.prompt = text;
 }
 
-function pill(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
+function tierOf(points) {
+  let tier = RESPECT.tiers[0];
+  for (const t of RESPECT.tiers) {
+    if (points >= t.points) tier = t;
+  }
+  return tier;
+}
+
+function districtTierOf(points) {
+  let tier = DISTRICT_TIERS[0];
+  for (const t of DISTRICT_TIERS) {
+    if (points >= t.points) tier = t;
+  }
+  return tier;
 }
 
 function bar(ctx, x, y, w, h, frac, fill, back) {
   ctx.fillStyle = back || 'rgba(0,0,0,0.55)';
-  pill(ctx, x, y, w, h, h / 2);
-  ctx.fill();
-  if (frac > 0) {
-    ctx.fillStyle = fill;
-    pill(ctx, x, y, Math.max(h, w * Math.min(1, frac)), h, h / 2);
-    ctx.fill();
-  }
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = fill;
+  ctx.fillRect(x, y, Math.max(0, Math.min(1, frac)) * w, h);
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.strokeRect(x + 0.5, y + 0.5, w, h);
 }
 
-function text(ctx, str, x, y, size, color, align, weight) {
-  ctx.font = `${weight || 700} ${size}px system-ui, sans-serif`;
+function text(ctx, str, x, y, size, color, align, bold) {
+  ctx.font = `${bold ? '700' : '400'} ${size}px system-ui, sans-serif`;
   ctx.fillStyle = color || '#fff';
   ctx.textAlign = align || 'left';
-  ctx.textBaseline = 'middle';
+  ctx.textBaseline = 'alphabetic';
   ctx.fillText(str, x, y);
 }
 
-export function drawCash(hud, game) {
-  const { ctx } = hud;
-  const x = 16;
-  const y = 16;
-  ctx.fillStyle = 'rgba(10,16,22,0.72)';
-  pill(ctx, x, y, 190, 58, 10);
-  ctx.fill();
-  text(ctx, `$${game.player.cash.toLocaleString()}`, x + 14, y + 20, 24, '#7dff8a');
-  bar(ctx, x + 14, y + 40, 162, 8, game.player.health / 100, '#58d68d');
-  text(ctx, 'LEO MARIN', x + 96, y + 20, 11, '#cfe3ef', 'left', 600);
-  text(ctx, 'HEALTH', x + 96, y + 40, 10, '#9fb6c6', 'left', 600);
-}
-
-export function drawWanted(hud, game) {
-  const { ctx } = hud;
-  const x = hud.w - 206;
-  const y = 16;
-  ctx.fillStyle = 'rgba(10,16,22,0.72)';
-  pill(ctx, x, y, 190, 58, 10);
-  ctx.fill();
-  let stars = '';
-  for (let i = 0; i < 5; i += 1) stars += i < game.player.wanted ? '★' : '☆';
-  text(ctx, `WANTED ${stars}`, x + 14, y + 20, 17, '#ffd23f');
-  if (game.heli && game.heli.active) {
-    text(ctx, 'AIR ONE OVERHEAD', x + 14, y + 42, 12, '#ff6b5e');
-  } else if (game.player.wanted > 0) {
-    text(ctx, 'LOSE THE COPS', x + 14, y + 42, 12, '#ff9d5c');
-  } else {
-    text(ctx, 'CLEAN', x + 14, y + 42, 12, '#7dff8a');
-  }
-}
-
-export function drawRespect(hud, game) {
-  const { ctx } = hud;
-  const x = 16;
-  const y = 84;
-  ctx.fillStyle = 'rgba(10,16,22,0.72)';
-  pill(ctx, x, y, 230, 46, 10);
-  ctx.fill();
-  const tier = game.respectTier || { name: 'Nobody', points: 0 };
-  const next = game.respectNext;
-  text(ctx, `RESPECT — ${tier.name.toUpperCase()}`, x + 12, y + 15, 13, '#ffd23f');
-  const label = next
-    ? `${game.district} · ${game.player.respect} pts — Next: ${next.name} (${next.points})`
-    : `${game.district} · ${game.player.respect} pts — Max rank`;
-  text(ctx, label, x + 12, y + 33, 11, '#cfe3ef', 'left', 500);
-}
-
-export function drawEmpire(hud, game) {
-  const { ctx } = hud;
-  const owned = Object.keys(game.empire.owned || {}).length;
-  if (owned === 0) return;
-  const x = 16;
-  const y = 140;
-  ctx.fillStyle = 'rgba(10,16,22,0.72)';
-  pill(ctx, x, y, 230, 46, 10);
-  ctx.fill();
-  const names = Object.keys(game.empire.owned).map((id) => {
-    const def = game.ventureDefs[id];
-    return def ? def.label : id;
-  });
-  text(ctx, `EMPIRE ${owned} · $${game.empireHourly}/hr`, x + 12, y + 15, 13, '#7dff8a');
-  text(ctx, names.join(' · '), x + 12, y + 33, 11, '#cfe3ef', 'left', 500);
-}
-
-export function drawCrew(hud, game) {
-  const { ctx } = hud;
-  const names = game.crewNames || [];
-  if (names.length === 0) return;
-  const x = 16;
-  const y = 196;
-  ctx.fillStyle = 'rgba(10,16,22,0.72)';
-  pill(ctx, x, y, 230, 30, 10);
-  ctx.fill();
-  text(ctx, `CREW: ${names.join(' · ')}`, x + 12, y + 15, 12, '#8ec9e8');
-}
-
-export function drawRace(hud, game) {
-  const { ctx } = hud;
-  if (!game.streetRaces.active) return;
-  const r = game.streetRaces.active;
-  const x = hud.w / 2 - 130;
-  const y = 16;
-  ctx.fillStyle = 'rgba(10,16,22,0.78)';
-  pill(ctx, x, y, 260, 52, 10);
-  ctx.fill();
-  text(ctx, `${r.label} — GATE ${r.gate}/${r.gates.length}`, x + 130, y + 16, 14, '#fff', 'center');
-  text(ctx, `${r.elapsed.toFixed(1)}s  ·  par ${r.par}s`, x + 130, y + 36, 12, '#ffd23f', 'center');
-}
-
-export function drawMission(hud, game) {
-  const { ctx } = hud;
-  const m = game.mission;
-  if (!m || !m.name) return;
-  const x = hud.w / 2 - 260;
-  const y = hud.h - 96;
-  ctx.fillStyle = 'rgba(10,16,22,0.72)';
-  pill(ctx, x, y, 520, 54, 10);
-  ctx.fill();
-  text(ctx, m.name, x + 260, y + 16, 14, '#ffd23f', 'center');
-  text(ctx, m.stepText || '', x + 260, y + 36, 12, '#fff', 'center');
-}
-
-export function drawGarage(hud, game) {
-  const { ctx } = hud;
-  const g = game.garageSummary;
-  if (!g) return;
-  const x = 16;
-  const y = hud.h - 76;
-  ctx.fillStyle = 'rgba(10,16,22,0.72)';
-  pill(ctx, x, y, 330, 30, 10);
-  ctx.fill();
-  text(ctx, `GARAGE  ENG ${g.engine} · ARMOR ${g.armor} · NITRO ${g.nitro}`, x + 12, y + 15, 12, '#ffd23f', 'left', 600);
-}
-
-export function drawWeapons(hud, game) {
-  const { ctx } = hud;
-  const x = 16;
-  const y = hud.h - 36;
-  ctx.fillStyle = 'rgba(10,16,22,0.72)';
-  pill(ctx, x, y, 330, 26, 8);
-  ctx.fill();
-  const slots = game.weaponSlots || [];
-  const line = slots.map((s, i) => {
-    const cur = i === game.player.weapon ? '>' : '';
-    return `${cur}${i + 1}:${s}`;
-  }).join('  ');
-  text(ctx, line, x + 12, y + 13, 12, '#fff', 'left', 600);
-}
-
-export function drawClock(hud, game) {
-  const { ctx } = hud;
-  const x = hud.w - 150;
-  const y = hud.h - 76;
-  ctx.fillStyle = 'rgba(10,16,22,0.72)';
-  pill(ctx, x, y, 134, 30, 10);
-  ctx.fill();
-  const label = game.clock.golden ? 'GOLDEN HOUR' : game.clock.isNight ? 'NIGHT' : 'DAY';
-  text(ctx, `${label} · ${game.clockLabel}`, x + 67, y + 15, 12, '#ffd23f', 'center');
-}
-
-export function drawSpeed(hud, game) {
-  const { ctx } = hud;
-  if (!game.player.inCar) return;
-  const x = hud.w - 150;
-  const y = hud.h - 36;
-  ctx.fillStyle = 'rgba(10,16,22,0.72)';
-  pill(ctx, x, y, 134, 26, 8);
-  ctx.fill();
-  text(ctx, `${game.speedKmh} km/h  ${game.clockLabel}`, x + 67, y + 13, 13, '#fff', 'center');
-}
-
-export function drawMinimap(hud, game) {
-  const { ctx } = hud;
+function drawMinimap(ctx, world) {
   const size = 150;
-  const x = hud.w - size - 16;
-  const y = 84;
-  ctx.fillStyle = 'rgba(10,16,22,0.78)';
-  pill(ctx, x, y, size, size, 10);
-  ctx.fill();
-  const half = 340;
-  const toMap = (wx, wz) => [x + ((wx + half) / (half * 2)) * size, y + ((wz + half) / (half * 2)) * size];
-  // Roads: faint grid.
-  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-  ctx.lineWidth = 1;
-  for (const a of [-264, -176, -88, 0, 88, 176, 264]) {
-    const [mx] = toMap(a, 0);
-    ctx.beginPath(); ctx.moveTo(mx, y + 6); ctx.lineTo(mx, y + size - 6); ctx.stroke();
-    const [, mz] = toMap(0, a);
-    ctx.beginPath(); ctx.moveTo(x + 6, mz); ctx.lineTo(x + size - 6, mz); ctx.stroke();
+  const x0 = 1280 - size - 16;
+  const y0 = 66;
+  const half = world.city.half;
+  const toMap = (x, z) => [x0 + ((x + half) / (half * 2)) * size, y0 + ((z + half) / (half * 2)) * size];
+  ctx.fillStyle = 'rgba(8,16,24,0.78)';
+  ctx.fillRect(x0, y0, size, size);
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.strokeRect(x0 + 0.5, y0 + 0.5, size, size);
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+  for (let g = -180; g <= 180; g += 60) {
+    const [ax] = toMap(g, 0);
+    const [, bz] = toMap(0, g);
+    ctx.beginPath(); ctx.moveTo(ax, y0); ctx.lineTo(ax, y0 + size); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x0, bz); ctx.lineTo(x0 + size, bz); ctx.stroke();
   }
-  // Businesses: gold dots. Race gates: white dots. Player: green triangle.
-  for (const v of game.ventureDots || []) {
-    const [mx, mz] = toMap(v.x, v.z);
+  for (const wreck of world.wrecks || []) {
+    const [wx, wz] = toMap(wreck.x, wreck.z);
+    ctx.fillStyle = '#ff7a1a';
+    ctx.fillRect(wx - 2, wz - 2, 4, 4);
+  }
+  for (const cop of world.cops || []) {
+    const [cx, cz] = toMap(cop.x, cop.z);
+    ctx.fillStyle = cop.kind === 'ram' ? '#ff9f1a' : cop.kind === 'pit' ? '#ff4d6d' : '#4da3ff';
+    ctx.beginPath(); ctx.arc(cx, cz, 3, 0, Math.PI * 2); ctx.fill();
+  }
+  const target = world.missionTarget;
+  if (target) {
+    const [tx, tz] = toMap(target.x, target.z);
     ctx.fillStyle = '#ffd23f';
-    ctx.beginPath(); ctx.arc(mx, mz, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(tx, tz - 6); ctx.lineTo(tx + 5, tz); ctx.lineTo(tx, tz + 6); ctx.lineTo(tx - 5, tz);
+    ctx.closePath(); ctx.fill();
   }
-  for (const g of game.gateDots || []) {
-    const [mx, mz] = toMap(g.x, g.z);
-    ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.arc(mx, mz, 3, 0, Math.PI * 2); ctx.fill();
+  const [px, pz] = toMap(world.player.x, world.player.z);
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(px, pz, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#000';
+  ctx.beginPath(); ctx.arc(px, pz, 4, 0, Math.PI * 2); ctx.stroke();
+}
+
+function drawWheel(ctx, world) {
+  const wheel = world.wheel;
+  if (!wheel.open) return;
+  const cx = 640;
+  const cy = 330;
+  const r = 110;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0, 0, 1280, 720);
+  for (let i = 0; i < 4; i += 1) {
+    const a0 = -Math.PI / 2 + (i * Math.PI) / 2 - Math.PI / 4;
+    const a1 = a0 + Math.PI / 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, a0, a1);
+    ctx.closePath();
+    ctx.fillStyle = wheel.sel === i ? 'rgba(255,210,63,0.85)' : 'rgba(20,30,40,0.85)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.stroke();
+    const mid = (a0 + a1) / 2;
+    const lx = cx + Math.cos(mid) * (r * 0.62);
+    const ly = cy + Math.sin(mid) * (r * 0.62);
+    const w = WEAPONS[i];
+    const owned = world.player.weapons[i];
+    text(ctx, w.name, lx, ly - 4, 15, owned ? '#fff' : '#888', 'center', true);
+    text(ctx, owned ? 'ready' : 'locked', lx, ly + 14, 11, owned ? '#ffd23f' : '#666', 'center');
   }
-  const [px, pz] = toMap(game.player.x, game.player.z);
-  ctx.fillStyle = '#7dff8a';
   ctx.beginPath();
-  ctx.moveTo(px, pz - 6);
-  ctx.lineTo(px + 5, pz + 5);
-  ctx.lineTo(px - 5, pz + 5);
-  ctx.closePath();
+  ctx.arc(cx, cy, 34, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(10,18,26,0.9)';
   ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.stroke();
+  const cur = WEAPONS[wheel.sel];
+  text(ctx, cur.name, cx, cy + 5, 14, '#ffd23f', 'center', true);
+  text(ctx, 'release Q to confirm', cx, cy + r + 28, 13, '#ddd', 'center');
 }
 
-export function drawBanner(hud) {
-  const { ctx } = hud;
-  if (!hud.banner) return;
-  const now = performance.now() / 1000;
-  if (now > hud.bannerUntil) { hud.banner = null; return; }
-  const x = hud.w / 2 - 300;
-  const y = 84;
-  ctx.fillStyle = 'rgba(20,28,38,0.88)';
-  pill(ctx, x, y, 600, 56, 10);
-  ctx.fill();
-  text(ctx, hud.banner.text, hud.w / 2, y + 18, 16, '#ffd23f', 'center');
-  if (hud.banner.sub) text(ctx, hud.banner.sub, hud.w / 2, y + 38, 12, '#fff', 'center');
-}
-
-export function drawPrompt(hud) {
-  const { ctx } = hud;
-  if (!hud.prompt || hud.prompt.length === 0) return;
-  const x = hud.w / 2 - 260;
-  const y = hud.h - 210;
-  const h = 34 + hud.prompt.length * 24;
-  ctx.fillStyle = 'rgba(10,16,22,0.85)';
-  pill(ctx, x, y, 520, h, 10);
-  ctx.fill();
-  text(ctx, 'SHOP — press 1-9 to buy, Esc to leave', x + 260, y + 18, 12, '#ffd23f', 'center');
-  hud.prompt.forEach((line, i) => {
-    text(ctx, `${i + 1}. ${line.label}`, x + 20, y + 44 + i * 24, 13, '#fff', 'left', 500);
-  });
-}
-
-export function drawToast(hud) {
-  const { ctx } = hud;
-  if (!hud.toast) return;
-  const now = performance.now() / 1000;
-  if (now > hud.toastUntil) { hud.toast = null; return; }
-  const x = hud.w / 2 - 200;
-  const y = 150;
-  ctx.fillStyle = 'rgba(10,16,22,0.8)';
-  pill(ctx, x, y, 400, 34, 10);
-  ctx.fill();
-  text(ctx, hud.toast, hud.w / 2, y + 17, 13, '#fff', 'center');
-}
-
-export function drawHud(hud, game) {
-  const { ctx } = hud;
+export function drawHud(hud, world, dt) {
+  const ctx = hud.ctx;
+  if (!ctx) return;
+  const scaleX = hud.canvas.width / hud.w;
+  const scaleY = hud.canvas.height / hud.h;
+  ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
   ctx.clearRect(0, 0, hud.w, hud.h);
-  drawCash(hud, game);
-  drawWanted(hud, game);
-  drawRespect(hud, game);
-  drawEmpire(hud, game);
-  drawCrew(hud, game);
-  drawRace(hud, game);
-  drawMission(hud, game);
-  drawGarage(hud, game);
-  drawWeapons(hud, game);
-  drawClock(hud, game);
-  drawSpeed(hud, game);
-  drawMinimap(hud, game);
-  drawBanner(hud);
-  drawPrompt(hud);
-  drawToast(hud);
+  const player = world.player;
+  const hour = world.clock.hour;
+  const hh = String(Math.floor(hour) % 24).padStart(2, '0');
+  const mm = String(Math.floor((hour % 1) * 60)).padStart(2, '0');
+
+  if (hud.bannerT > 0) {
+    hud.bannerT -= dt;
+    const alpha = Math.min(1, hud.bannerT);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = 'rgba(10,18,26,0.72)';
+    const bw = Math.min(900, 40 + hud.banner.length * 9);
+    ctx.fillRect(640 - bw / 2, 96, bw, 46);
+    ctx.strokeStyle = '#ffd23f';
+    ctx.strokeRect(640 - bw / 2 + 0.5, 96.5, bw, 46);
+    text(ctx, hud.banner, 640, 126, 20, '#ffd23f', 'center', true);
+    ctx.globalAlpha = 1;
+  }
+
+  // Top left: cash, respect, objective.
+  text(ctx, `$${Math.floor(player.cash).toLocaleString('en-US')}`, 20, 34, 26, '#7CFC9A', 'left', true);
+  const tier = tierOf(player.respect);
+  text(ctx, `RESPECT ${Math.floor(player.respect)} — ${tier.name}`, 20, 62, 14, '#ffd23f', 'left', true);
+  const next = RESPECT.tiers.find((t) => t.points > player.respect);
+  const prev = tier.points;
+  const frac = next ? (player.respect - prev) / (next.points - prev) : 1;
+  bar(ctx, 20, 70, 220, 10, frac, '#ffd23f');
+  const objective = world.objectiveText || '';
+  if (objective) {
+    ctx.fillStyle = 'rgba(10,18,26,0.6)';
+    ctx.fillRect(20, 92, Math.min(560, 24 + objective.length * 7.5), 30);
+    text(ctx, objective, 30, 112, 15, '#fff', 'left');
+  }
+
+  // Top right: wanted stars, RAM/PIT tags, minimap, clock.
+  let sx = 1280 - 20;
+  for (let i = 0; i < 5; i += 1) {
+    text(ctx, i < player.wanted ? '★' : '☆', sx - i * 26, 34, 24, i < player.wanted ? '#ff4d6d' : 'rgba(255,255,255,0.5)', 'right', true);
+  }
+  const kinds = new Set((world.cops || []).map((c) => c.kind));
+  let tagX = 1280 - 20;
+  if (kinds.has('ram')) {
+    ctx.fillStyle = '#ff9f1a';
+    ctx.fillRect(tagX - 52, 44, 52, 18);
+    text(ctx, 'RAM', tagX - 26, 57, 11, '#111', 'center', true);
+    tagX -= 58;
+  }
+  if (kinds.has('pit')) {
+    ctx.fillStyle = '#ff4d6d';
+    ctx.fillRect(tagX - 52, 44, 52, 18);
+    text(ctx, 'PIT', tagX - 26, 57, 11, '#fff', 'center', true);
+  }
+  drawMinimap(ctx, world);
+  text(ctx, `${hh}:${mm}  ${world.clock.isNight ? 'NIGHT' : world.clock.golden ? 'GOLDEN HOUR' : 'DAY'}`, 1260, 240, 13, '#ddd', 'right');
+  text(ctx, world.weather.kind.toUpperCase(), 1260, 258, 13, world.weather.kind === 'rain' ? '#7ab8ff' : '#ddd', 'right');
+
+  // Right side: empire widget.
+  const owned = Object.keys(world.empire.owned);
+  if (owned.length > 0) {
+    ctx.fillStyle = 'rgba(10,18,26,0.6)';
+    ctx.fillRect(1060, 280, 200, 24 + owned.length * 18);
+    text(ctx, 'EMPIRE', 1070, 298, 12, '#ffd23f', 'left', true);
+    owned.forEach((id, i) => {
+      const def = world.empire.owned[id];
+      text(ctx, `${id} · Lv${def.level}`, 1070, 316 + i * 18, 12, '#fff', 'left');
+    });
+  }
+
+  // Bottom left: district, then health (label ABOVE the bar).
+  const district = districtAt(player.x, player.z);
+  const standing = player.districtStanding[district.id] || 0;
+  const dtier = districtTierOf(standing);
+  text(ctx, `${district.name.toUpperCase()} — ${dtier.name}`, 20, 606, 14, '#7ab8ff', 'left', true);
+  text(ctx, `District standing ${Math.floor(standing)}`, 20, 624, 12, '#ddd', 'left');
+  bar(ctx, 20, 630, 220, 9, standing / 200, '#7ab8ff');
+  text(ctx, 'HEALTH', 20, 664, 13, '#fff', 'left', true);
+  bar(ctx, 20, 670, 220, 14, player.health / 100, player.health > 30 ? '#7CFC9A' : '#ff4d6d');
+
+  // Bottom right: weapon, speed, nitro.
+  const weapon = WEAPONS[player.weapon] || WEAPONS[0];
+  text(ctx, weapon.name, 1260, 606, 15, '#fff', 'right', true);
+  text(ctx, 'hold Q — weapon wheel', 1260, 624, 12, '#aaa', 'right');
+  const speed = world.car ? Math.round(Math.abs(world.car.speed) * 3.6) : 0;
+  text(ctx, `${speed} km/h`, 1260, 664, 22, '#fff', 'right', true);
+  for (let i = 0; i < 3; i += 1) {
+    ctx.fillStyle = i < world.garage.nitro ? '#ffd23f' : 'rgba(255,255,255,0.2)';
+    ctx.fillRect(1260 - 18 - i * 22, 674, 16, 10);
+  }
+  text(ctx, 'NITRO', 1260 - 70, 684, 11, '#ddd', 'right');
+
+  // Radio.
+  if (world.radio) text(ctx, '♪ SOL FM', 20, 560, 13, '#ff9fde', 'left', true);
+
+  // Toast and prompt.
+  if (hud.toastT > 0) {
+    hud.toastT -= dt;
+    ctx.globalAlpha = Math.min(1, hud.toastT);
+    text(ctx, hud.toast, 640, 600, 16, '#ffd23f', 'center', true);
+    ctx.globalAlpha = 1;
+  }
+  if (hud.prompt) {
+    text(ctx, hud.prompt, 640, 640, 15, '#fff', 'center');
+  }
+
+  // Explosion flash.
+  if (world.flash > 0) {
+    ctx.fillStyle = `rgba(255,120,20,${Math.min(0.5, world.flash)})`;
+    ctx.fillRect(0, 0, hud.w, hud.h);
+  }
+
+  drawWheel(ctx, world);
+
+  // Pause / busted overlays.
+  if (world.paused) {
+    ctx.fillStyle = 'rgba(5,10,16,0.75)';
+    ctx.fillRect(0, 0, hud.w, hud.h);
+    text(ctx, 'PAUSED', 640, 300, 44, '#fff', 'center', true);
+    text(ctx, `Cash $${Math.floor(player.cash)} · Respect ${Math.floor(player.respect)} · Missions ${world.mission.done.length}/12`, 640, 340, 16, '#ddd', 'center');
+    text(ctx, 'P to resume — progress saved', 640, 370, 14, '#aaa', 'center');
+  }
+  if (world.busted) {
+    ctx.fillStyle = 'rgba(20,5,10,0.7)';
+    ctx.fillRect(0, 0, hud.w, hud.h);
+    text(ctx, 'BUSTED', 640, 300, 44, '#ff4d6d', 'center', true);
+    text(ctx, 'The cops took their cut. Back to the Hideout.', 640, 340, 16, '#ddd', 'center');
+  }
+  if (world.over) {
+    ctx.fillStyle = 'rgba(5,10,16,0.8)';
+    ctx.fillRect(0, 0, hud.w, hud.h);
+    text(ctx, 'WASTED', 640, 300, 44, '#ff4d6d', 'center', true);
+  }
 }

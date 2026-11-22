@@ -1,105 +1,80 @@
-// The garage — car upgrades (v6 rewrite).
-// Leo's garage tunes the car he drives: engine tiers for top speed and
-// acceleration, armor tiers that soak damage, nitro charges for a burst of
-// speed, and paint jobs that change the car's colour. Any crew mate on the
-// payroll knocks 10% off every price here. Upgrades apply to the car Leo
-// is driving and are saved with the career.
+// Solmar Heat v7 — the garage.
+// Engines, armor, nitro, paint. The next tier always costs more than the
+// last, and a hired mate knocks 10% off the bill. Nitro is bought by the
+// charge and burned by the press — one press, one charge, one long boost.
 
 import { GARAGE } from './config.js';
-import { crewGarageRate } from './crew.js';
 import { applyEngine } from './vehicles.js';
 
 export function initGarage() {
-  return {
-    engine: 0,
-    armor: 0,
-    nitro: 0,
-    paint: 0,
-  };
+  return { engine: 0, armor: 0, nitro: 0, paint: 'Sunset Orange' };
 }
 
-export function garageRate(garage, crew) {
-  return crewGarageRate(crew);
+export function engineCost(tier, rate) {
+  const def = GARAGE.engines[Math.max(0, Math.min(tier, GARAGE.engines.length - 1))];
+  return Math.round(def.cost * (rate || 1));
 }
 
-export function engineCost(garage, crew) {
-  const next = GARAGE.engines[garage.engine + 1];
-  if (!next) return null;
-  return Math.round(next.price * garageRate(garage, crew));
+export function buyEngine(garage, player, rate, car) {
+  const next = garage.engine + 1;
+  if (next >= GARAGE.engines.length) return -1;
+  const cost = engineCost(next, rate);
+  if (player.cash < cost) return -1;
+  player.cash -= cost;
+  garage.engine = next;
+  if (car) applyEngine(car, next);
+  return cost;
 }
 
-export function buyEngine(garage, cash, crew, car) {
-  const cost = engineCost(garage, crew);
-  if (cost === null) return { ok: false, reason: 'already maxed' };
-  if (cash < cost) return { ok: false, reason: 'not enough cash' };
-  garage.engine += 1;
-  if (car) applyEngine(car, garage.engine);
-  return { ok: true, cost, tier: garage.engine };
+export function armorCost(tier, rate) {
+  const def = GARAGE.armors[Math.max(0, Math.min(tier, GARAGE.armors.length - 1))];
+  return Math.round(def.cost * (rate || 1));
 }
 
-export function armorCost(garage, crew) {
-  const next = GARAGE.armor[garage.armor + 1];
-  if (!next) return null;
-  return Math.round(next.price * garageRate(garage, crew));
-}
-
-export function buyArmor(garage, cash, crew) {
-  const cost = armorCost(garage, crew);
-  if (cost === null) return { ok: false, reason: 'already maxed' };
-  if (cash < cost) return { ok: false, reason: 'not enough cash' };
-  garage.armor += 1;
-  return { ok: true, cost, tier: garage.armor };
+export function buyArmor(garage, player, rate) {
+  const next = garage.armor + 1;
+  if (next >= GARAGE.armors.length) return -1;
+  const cost = armorCost(next, rate);
+  if (player.cash < cost) return -1;
+  player.cash -= cost;
+  garage.armor = next;
+  return cost;
 }
 
 export function armorSoak(garage) {
-  const tier = GARAGE.armor[garage.armor] || GARAGE.armor[0];
-  return tier.soak;
+  return GARAGE.armors[Math.min(garage.armor, GARAGE.armors.length - 1)].soak;
 }
 
-export function nitroCost(garage, crew) {
-  return Math.round(GARAGE.nitroPrice * garageRate(garage, crew));
+export function nitroCost() {
+  return GARAGE.nitro.cost;
 }
 
-export function buyNitro(garage, cash, crew) {
-  const cost = nitroCost(garage, crew);
-  if (cash < cost) return { ok: false, reason: 'not enough cash' };
+export function buyNitro(garage, player) {
+  if (garage.nitro >= GARAGE.nitro.max) return -1;
+  if (player.cash < GARAGE.nitro.cost) return -1;
+  player.cash -= GARAGE.nitro.cost;
   garage.nitro += 1;
-  return { ok: true, cost, charges: garage.nitro };
+  return GARAGE.nitro.cost;
 }
 
-export function useNitro(garage) {
-  if (garage.nitro <= 0) return false;
+export function useNitro(garage, car) {
+  if (!car || garage.nitro <= 0 || car.nitroBurn > 0) return false;
   garage.nitro -= 1;
+  car.nitroBurn = GARAGE.nitro.burn;
   return true;
 }
 
-export const PAINTS = [
-  { name: 'Sunset orange', color: 0xff5a3c },
-  { name: 'Midnight blue', color: 0x1f3a5f },
-  { name: 'Lime', color: 0x9acd32 },
-  { name: 'Candy pink', color: 0xff6fa5 },
-  { name: 'Carbon black', color: 0x111111 },
-];
-
-export function paintCost(garage, crew) {
-  return Math.round(250 * garageRate(garage, crew));
-}
-
-export function buyPaint(garage, cash, crew, index) {
-  if (index < 0 || index >= PAINTS.length) return { ok: false, reason: 'no such paint' };
-  const cost = paintCost(garage, crew);
-  if (cash < cost) return { ok: false, reason: 'not enough cash' };
-  garage.paint = index;
-  return { ok: true, cost, paint: PAINTS[index] };
+export function buyPaint(garage, player, name) {
+  const paint = GARAGE.paints.find((p) => p.name === name);
+  if (!paint) return -1;
+  if (player.cash < paint.cost) return -1;
+  player.cash -= paint.cost;
+  garage.paint = paint.name;
+  return paint.cost;
 }
 
 export function garageSummary(garage) {
-  const engine = GARAGE.engines[garage.engine] || GARAGE.engines[0];
-  const armor = GARAGE.armor[garage.armor] || GARAGE.armor[0];
-  return {
-    engine: engine.name,
-    armor: armor.name,
-    nitro: garage.nitro,
-    paint: (PAINTS[garage.paint] || PAINTS[0]).name,
-  };
+  const engine = GARAGE.engines[Math.min(garage.engine, GARAGE.engines.length - 1)];
+  const armor = GARAGE.armors[Math.min(garage.armor, GARAGE.armors.length - 1)];
+  return `${engine.name} engine, ${armor.name} armor, ${garage.nitro} nitro, ${garage.paint} paint`;
 }
