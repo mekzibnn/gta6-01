@@ -1,59 +1,113 @@
-// Sound for Solmar Heat, as a tiny WebAudio synth.
-// Everything is guarded: in a headless browser, or with no audio device,
-// every call is a silent no-op and the game plays on.
+// Sound, synthesized. No audio files: a tiny WebAudio rig makes the
+// engine hum, the siren wail, the cash register and the radio's soft
+// pad. Everything is guarded — headless Chrome and a missing gesture
+// must never throw, and the game plays fine with the sound off.
 
 let ctx = null;
+let master = null;
+let engineOsc = null;
+let engineGain = null;
+let radioTimer = 0;
 
-function audio() {
+function ensure() {
+  if (ctx) return true;
   try {
-    if (!ctx) {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) return null;
-      ctx = new AC();
-    }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return false;
+    ctx = new AC();
+    master = ctx.createGain();
+    master.gain.value = 0.16;
+    master.connect(ctx.destination);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Call on the first user gesture. The game also calls it on E.
+export function unlockAudio() {
+  if (!ensure()) return;
+  try {
     if (ctx.state === 'suspended') void ctx.resume();
-    return ctx;
-  } catch {
-    return null;
-  }
+  } catch { /* sound stays off */ }
 }
 
-function tone(freq, seconds, type = 'sine', gain = 0.08) {
-  const ac = audio();
-  if (!ac) return;
+function blip(freq, dur, type, vol) {
+  if (!ensure() || !ctx || ctx.state !== 'running') return;
   try {
-    const osc = ac.createOscillator();
-    const g = ac.createGain();
-    osc.type = type;
-    osc.frequency.value = freq;
-    g.gain.setValueAtTime(gain, ac.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + seconds);
-    osc.connect(g);
-    g.connect(ac.destination);
-    osc.start();
-    osc.stop(ac.currentTime + seconds);
-  } catch {
-    // Silence is fine.
-  }
+    const o = ctx.createOscillator();
+    const gn = ctx.createGain();
+    o.type = type || 'square';
+    o.frequency.value = freq;
+    gn.gain.setValueAtTime(vol || 0.5, ctx.currentTime);
+    gn.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    o.connect(gn);
+    gn.connect(master);
+    o.start();
+    o.stop(ctx.currentTime + dur);
+  } catch { /* ignore */ }
 }
 
-export const sfx = {
-  click() {
-    tone(660, 0.08, 'square', 0.05);
-  },
-  buy() {
-    tone(880, 0.12, 'sine', 0.09);
-    setTimeout(() => tone(1320, 0.15, 'sine', 0.09), 90);
-  },
-  mission() {
-    tone(523, 0.15, 'triangle', 0.1);
-    setTimeout(() => tone(784, 0.2, 'triangle', 0.1), 120);
-  },
-  boom() {
-    tone(70, 0.5, 'sawtooth', 0.16);
-  },
-  siren() {
-    tone(740, 0.4, 'sine', 0.04);
-    setTimeout(() => tone(560, 0.4, 'sine', 0.04), 400);
-  },
-};
+export function sfxCash() {
+  blip(880, 0.12, 'sine', 0.6);
+  setTimeout(() => blip(1318, 0.18, 'sine', 0.5), 90);
+}
+
+export function sfxBoom() {
+  if (!ensure() || !ctx || ctx.state !== 'running') return;
+  try {
+    const o = ctx.createOscillator();
+    const gn = ctx.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(160, ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(40, ctx.currentTime + 0.5);
+    gn.gain.setValueAtTime(0.9, ctx.currentTime);
+    gn.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+    o.connect(gn);
+    gn.connect(master);
+    o.start();
+    o.stop(ctx.currentTime + 0.6);
+  } catch { /* ignore */ }
+}
+
+export function sfxClick() {
+  blip(660, 0.06, 'square', 0.3);
+}
+
+// The engine hum follows the player's car speed. Called every frame;
+// silent when on foot or when there is no audio context.
+export function updateEngineSound(g) {
+  if (!ensure() || !ctx || ctx.state !== 'running') return;
+  try {
+    if (!g.car) {
+      if (engineOsc) {
+        engineOsc.stop();
+        engineOsc = null;
+        engineGain = null;
+      }
+      return;
+    }
+    if (!engineOsc) {
+      engineOsc = ctx.createOscillator();
+      engineGain = ctx.createGain();
+      engineOsc.type = 'sawtooth';
+      engineGain.gain.value = 0.05;
+      engineOsc.connect(engineGain);
+      engineGain.connect(master);
+      engineOsc.start();
+    }
+    const def = g.car;
+    engineOsc.frequency.value = 55 + Math.abs(def.speed) * 4;
+    engineGain.gain.value = 0.03 + Math.min(0.08, Math.abs(def.speed) * 0.002);
+  } catch { /* ignore */ }
+}
+
+// The radio: a soft two-note pad every few bars, "SOL FM 98.4".
+export function updateRadio(g, dt) {
+  radioTimer -= dt;
+  if (radioTimer > 0) return;
+  radioTimer = 3.2;
+  if (!g.car) return;
+  blip(392, 1.4, 'sine', 0.10);
+  blip(523, 1.4, 'sine', 0.07);
+}

@@ -1,24 +1,34 @@
-// Weather for Solmar Heat. No dependencies.
-// A cycle lasts 30-90 seconds, then a fresh kind is rolled. The timer is
-// the only moving part: the renderer reads `kind` for sky and rain.
+// The weather. A cycle lasts a minute or two, then the sky rolls a fresh
+// one. Clear is the common roll; overcast and rain show up often enough
+// that the city never looks the same twice. The timer is the whole state
+// the playtest leans on: forcing it near zero must start a fresh cycle
+// with a long timer again.
 
-export const WEATHER_KINDS = ['clear', 'cloudy', 'rain'];
+export const WEATHER_KINDS = ['clear', 'overcast', 'rain'];
 
 export function makeWeather(rng) {
-  return { kind: 'clear', timer: 60 + rng.range(0, 40) };
+  return {
+    kind: 'clear',
+    // Seconds left in this cycle. Starts long so the opening shot is a
+    // clean golden-hour sky.
+    timer: 90,
+    rng,
+  };
 }
 
-export function updateWeather(weather, dt, rng) {
+// Advance the weather by dt seconds. When the timer runs out, roll a new
+// cycle: a fresh kind and a fresh timer of 60-120 seconds.
+export function updateWeather(weather, dt) {
   weather.timer -= dt;
-  if (weather.timer <= 0) {
-    weather.kind = rng.pick(WEATHER_KINDS);
-    weather.timer = 30 + rng.range(0, 60);
-  }
+  if (weather.timer > 0) return;
+  const roll = weather.rng.next();
+  if (roll < 0.55) weather.kind = 'clear';
+  else if (roll < 0.85) weather.kind = 'overcast';
+  else weather.kind = 'rain';
+  weather.timer = 60 + weather.rng.next() * 60;
 }
 
-// A one-word label for the HUD.
+// A short label for the HUD plate.
 export function weatherLabel(weather) {
-  if (weather.kind === 'rain') return 'RAIN';
-  if (weather.kind === 'cloudy') return 'CLOUDY';
-  return 'CLEAR';
+  return weather.kind.toUpperCase();
 }

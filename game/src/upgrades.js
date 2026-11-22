@@ -1,46 +1,62 @@
-// Garage upgrades for Solmar Heat.
-// Three engine tiers, three armour tiers, nitro charges. A hired crew
-// member gets the garage 10% off: tier 2 is $1600 list, $1440 with the
-// crew rate.
+// The garage. Engine tiers make the car faster, armour tiers soak up
+// damage, nitro charges are spent for a burst. A hired crew mate takes
+// 10% off every bill. The garage object lives on the game object so the
+// playtest can read it straight off window.__game.
 
-import { PRICES } from './config.js';
-import { hasCrew } from './crew.js';
-
-export const ENGINE_TIERS = ['Stock', 'Street', 'Race'];
-export const ARMOR_TIERS = ['None', 'Light', 'Heavy'];
+import { GARAGE_PRICES } from './config.js';
+import { discounted } from './crew.js';
 
 export function makeGarage() {
   return { engine: 0, nitro: 0, armor: 0 };
 }
 
-// The price of the next engine tier, or null when already at the top.
-export function enginePrice(garage, roster) {
-  const tier = garage.engine + 1;
-  if (tier > 2) return null;
-  const list = PRICES.engine[tier];
-  return hasCrew(roster) ? Math.round(list * (1 - PRICES.crewDiscount)) : list;
+// The price of the next engine tier, or null when already maxed.
+export function enginePrice(g) {
+  if (g.garage.engine >= 2) return null;
+  return discounted(GARAGE_PRICES.engine[g.garage.engine + 1], g);
 }
 
-// The price of the next armour tier, or null when already at the top.
-export function armorPrice(garage, roster) {
-  const tier = garage.armor + 1;
-  if (tier > 2) return null;
-  const list = PRICES.armor[tier];
-  return hasCrew(roster) ? Math.round(list * (1 - PRICES.crewDiscount)) : list;
+// Buy the next engine tier. Returns true when the spanner turns.
+export function buyEngine(g) {
+  const price = enginePrice(g);
+  if (price === null) return false;
+  if (g.player.cash < price) return false;
+  g.player.cash -= price;
+  g.garage.engine += 1;
+  return true;
 }
 
-// One nitro charge, crew rate included.
-export function nitroPrice(roster) {
-  const list = PRICES.nitroCharge;
-  return hasCrew(roster) ? Math.round(list * (1 - PRICES.crewDiscount)) : list;
+// The price of the next armour tier, or null when already maxed.
+export function armorPrice(g) {
+  if (g.garage.armor >= 2) return null;
+  return discounted(GARAGE_PRICES.armor[g.garage.armor + 1], g);
 }
 
-// The armour tier's name for the HUD.
-export function armorLabel(armor) {
-  return ARMOR_TIERS[armor] ?? 'None';
+// Buy the next armour tier.
+export function buyArmor(g) {
+  const price = armorPrice(g);
+  if (price === null) return false;
+  if (g.player.cash < price) return false;
+  g.player.cash -= price;
+  g.garage.armor += 1;
+  return true;
 }
 
-// The engine tier's name for the HUD.
-export function engineLabel(engine) {
-  return ENGINE_TIERS[engine] ?? 'Stock';
+// Buy one nitro charge.
+export function buyNitro(g) {
+  const price = discounted(GARAGE_PRICES.nitroCharge, g);
+  if (g.player.cash < price) return false;
+  g.player.cash -= price;
+  g.garage.nitro += 1;
+  return true;
+}
+
+// The armour tier as a word for the HUD bar.
+export function armorName(tier) {
+  return ['None', 'Light', 'Heavy'][tier] || 'None';
+}
+
+// How much of a hit the armour soaks: a tier eats a third of it.
+export function armorSoak(g) {
+  return g.garage.armor * 0.33;
 }

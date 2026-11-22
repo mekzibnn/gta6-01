@@ -1,142 +1,103 @@
-// The player on foot and the police for Solmar Heat.
-// Wanted stars bring the cops: patrol cars at one star, RAM and PIT
-// specialists from three. The Heat Wave mission locks the heat at five.
+// The player on foot. WASD walks the streets, the heading follows the
+// movement, and the player is the fallback camera target when no car is
+// under them. Entering and leaving cars lives here too, next to the
+// steal.
 
-import { WANTED, CAR } from './config.js';
-import { decayBonus } from './crew.js';
-import { nextVehicleId, explodeCar } from './vehicles.js';
-import { heatLock } from './missions.js';
+import { buildingPush } from './city.js';
 
-// Walk speed on foot.
-const WALK_SPEED = 6;
-
-// Move the player on foot from the held keys. Returns metres walked.
-export function updatePlayer(game, dt) {
-  if (game.player.inCar) return 0;
-  const keys = game.keys;
-  let mx = 0;
-  let mz = 0;
-  if (keys.has('KeyW')) mz += 1;
-  if (keys.has('KeyS')) mz -= 1;
-  if (keys.has('KeyA')) mx -= 1;
-  if (keys.has('KeyD')) mx += 1;
-  if (mx === 0 && mz === 0) return 0;
-  const len = Math.hypot(mx, mz);
-  const step = WALK_SPEED * dt;
-  const dx = (mx / len) * step;
-  const dz = (mz / len) * step;
-  game.player.x += dx;
-  game.player.z += dz;
-  game.player.heading = Math.atan2(dx, dz);
-  return Math.hypot(dx, dz);
-}
-
-// How many cops the wanted level calls for.
-function desiredCops(wanted) {
-  return Math.min(10, wanted * WANTED.copsPerStar);
-}
-
-// Spawn one cop near the player, on a road, of the given kind.
-function spawnCop(game, kind) {
-  const angle = game.rng.range(0, Math.PI * 2);
-  const dist = game.rng.range(30, 50);
+export function makePlayer() {
   return {
-    id: nextVehicleId(),
-    kind,
-    x: game.player.x + Math.sin(angle) * dist,
-    z: game.player.z + Math.cos(angle) * dist,
-    heading: 0,
-    speed: 0,
-    topSpeed: 38,
-    health: 120,
-    ramCooldown: 0,
+    x: 0, z: 156, heading: 0,
+    inCar: false,
+    cash: 500,
+    wanted: 0,
+    health: 100,
+    maxHealth: 100,
+    weapon: 0,
+    weapons: [true, false, false, false],
+    districtStanding: { marina: 0, oldtown: 0, docks: 0, hills: 0, downtown: 0 },
+    respect: 0,
   };
 }
 
-// Keep the cop roster matched to the wanted level, with a RAM and a PIT
-// unit from three stars up.
-export function updateCops(game, dt) {
-  const wanted = game.player.wanted;
-  if (wanted <= 0) {
-    game.cops.length = 0;
-    return;
+// Walk with WASD. Speed is a jog; the heading turns toward the movement.
+export function updatePlayerOnFoot(g, dt) {
+  if (g.player.inCar) return;
+  const keys = g.keys;
+  let mx = 0;
+  let mz = 0;
+  if (keys.w) mz += 1;
+  if (keys.s) mz -= 1;
+  if (keys.a) mx -= 1;
+  if (keys.d) mx += 1;
+  if (mx === 0 && mz === 0) return;
+  const len = Math.sqrt(mx * mx + mz * mz);
+  mx /= len;
+  mz /= len;
+  // Camera-relative: the camera looks north (-z is forward on screen is
+  // not assumed here; W walks toward +z, the avenue's north).
+  const speed = 5.5;
+  g.player.x += mx * speed * dt;
+  g.player.z += mz * speed * dt;
+  g.player.heading = Math.atan2(mx, mz);
+  g.player.x = Math.max(-205, Math.min(205, g.player.x));
+  g.player.z = Math.max(-205, Math.min(205, g.player.z));
+  const push = buildingPush(g.city, g.player.x, g.player.z, 1);
+  if (push) {
+    g.player.x = push.x;
+    g.player.z = push.z;
   }
-  const want = desiredCops(wanted);
-  while (game.cops.length < want) {
-    let kind = 'patrol';
-    if (wanted >= WANTED.ramAt && !game.cops.some((c) => c.kind === 'ram')) kind = 'ram';
-    else if (wanted >= WANTED.pitAt && !game.cops.some((c) => c.kind === 'pit')) kind = 'pit';
-    game.cops.push(spawnCop(game, kind));
-  }
-  while (game.cops.length > want) game.cops.pop();
+}
 
-  const tx = game.car ? game.car.x : game.player.x;
-  const tz = game.car ? game.car.z : game.player.z;
-  for (const cop of game.cops) {
-    if (cop.ramCooldown > 0) cop.ramCooldown -= dt;
-    // Steer toward the target: straight at it for RAM, alongside for PIT.
-    let aimX = tx;
-    let aimZ = tz;
-    if (cop.kind === 'pit') {
-      aimX = tx + Math.cos(game.player.heading) * 6;
-      aimZ = tz - Math.sin(game.player.heading) * 6;
-    }
-    const wantHeading = Math.atan2(aimX - cop.x, aimZ - cop.z);
-    let diff = wantHeading - cop.heading;
-    while (diff > Math.PI) diff -= Math.PI * 2;
-    while (diff < -Math.PI) diff += Math.PI * 2;
-    cop.heading += Math.max(-2.4 * dt, Math.min(2.4 * dt, diff));
-    cop.speed = Math.min(cop.topSpeed, cop.speed + 14 * dt);
-    cop.x += Math.sin(cop.heading) * cop.speed * dt;
-    cop.z += Math.cos(cop.heading) * cop.speed * dt;
-    // A ram that connects hurts the player's car, then backs off.
-    if (game.car && !game.car.exploded && cop.ramCooldown <= 0) {
-      const dx = cop.x - game.car.x;
-      const dz = cop.z - game.car.z;
-      if (dx * dx + dz * dz < 3.5 * 3.5) {
-        const rel = Math.abs(cop.speed - game.car.speed);
-        if (rel > 5) {
-          game.car.health -= 8 + rel * 0.4;
-          cop.ramCooldown = 2;
-          if (game.car.health <= 0) explodeCar(game, game.car);
-        }
-      }
+// The nearest car the player could steal, within reach, or null.
+export function nearestCar(g, maxDist) {
+  let best = null;
+  let bestD = maxDist * maxDist;
+  for (const car of g.cars) {
+    if (car.exploded) continue;
+    const dx = car.x - g.player.x;
+    const dz = car.z - g.player.z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 < bestD) {
+      bestD = d2;
+      best = car;
     }
   }
+  return best;
 }
 
-// The wanted level cools off over time, unless the Heat Wave mission
-// locks it up.
-export function updateWanted(game, dt) {
-  if (game.player.wanted <= 0) {
-    game.wantedTimer = 0;
-    return;
+// Get in a car. A parked car is free; taking a driving car in front of a
+// cop draws a star.
+export function enterCar(g, car) {
+  if (!car || car.exploded) return false;
+  g.player.inCar = true;
+  g.car = car;
+  g.player.x = car.x;
+  g.player.z = car.z;
+  g.player.heading = car.heading;
+  car.speed = 0;
+  g.stats.carsStolen += 1;
+  g.hud.toast = `Stole the ${car.name}`;
+  g.hud.toastT = 2.5;
+  const copNear = g.cops.some((c) => {
+    const dx = c.x - car.x;
+    const dz = c.z - car.z;
+    return dx * dx + dz * dz < 1600;
+  });
+  if (copNear && car.cruise > 0) {
+    g.player.wanted = Math.min(5, g.player.wanted + 1);
   }
-  if (heatLock(game.mission)) {
-    game.wantedTimer = 0;
-    return;
-  }
-  game.wantedTimer += dt;
-  const interval = WANTED.decaySeconds / decayBonus(game.roster);
-  if (game.wantedTimer >= interval) {
-    game.wantedTimer = 0;
-    game.player.wanted = Math.max(0, game.player.wanted - 1);
-  }
+  return true;
 }
 
-// Stealing a car raises the heat by a star.
-export function stealCar(game, car) {
-  game.car = car;
-  game.player.inCar = true;
-  game.player.wanted = Math.min(5, game.player.wanted + 1);
-  game.stats.carsStolen += 1;
-}
-
-// Step out of the car, on foot beside it.
-export function leaveCar(game) {
-  if (!game.car) return;
-  game.player.x = game.car.x + 3;
-  game.player.z = game.car.z;
-  game.player.inCar = false;
-  game.car = null;
+// Step out of the car, onto the street beside it.
+export function exitCar(g) {
+  if (!g.car) return false;
+  const car = g.car;
+  g.player.inCar = false;
+  g.player.x = car.x + Math.sin(car.heading + Math.PI / 2) * 3;
+  g.player.z = car.z + Math.cos(car.heading + Math.PI / 2) * 3;
+  g.player.heading = car.heading;
+  g.car = null;
+  return true;
 }

@@ -1,34 +1,46 @@
-// Saving and loading for Solmar Heat.
-// One localStorage key, versioned. The shape is flat on purpose: the pause
-// screen writes it, the next session reads it back, and nothing else
-// touches it.
+// Save and load. The save lives in localStorage under the v2 key and
+// holds everything a returning player needs: cash, the mission, the
+// empire, the roster, the race series, the district standing and the
+// garage. It is written when the game pauses and loaded on start.
 
 import { SAVE_KEY } from './config.js';
 
-export function writeSave(game) {
+// Gather the saveable slice of the game object into a plain object.
+export function buildSave(g) {
+  return {
+    version: 2,
+    cash: g.player.cash,
+    wanted: g.player.wanted,
+    health: g.player.health,
+    respect: g.player.respect,
+    mission: { index: g.mission.index, done: [...g.mission.done] },
+    empire: {
+      owned: JSON.parse(JSON.stringify(g.empire.owned)),
+      totalEarned: g.empire.totalEarned,
+    },
+    roster: { hired: JSON.parse(JSON.stringify(g.roster.hired)) },
+    streetRaces: {
+      won: g.streetRaces.won,
+      best: { ...g.streetRaces.best },
+    },
+    districtStanding: { ...g.player.districtStanding },
+    garage: { ...g.garage },
+    clockHour: g.clock.hour,
+    stats: { ...g.stats },
+  };
+}
+
+// Write the save. Returns true when it landed.
+export function writeSave(g) {
   try {
-    const snapshot = {
-      version: 2,
-      cash: game.player.cash,
-      health: game.player.health,
-      wanted: game.player.wanted,
-      garage: game.garage,
-      empire: game.empire,
-      roster: game.roster,
-      streetRaces: game.streetRaces,
-      districtStanding: game.player.districtStanding,
-      missions: { done: game.mission.done, index: game.mission.index },
-      stats: game.stats,
-      clockHour: game.clock.hour,
-      player: { x: game.player.x, z: game.player.z },
-    };
-    localStorage.setItem(SAVE_KEY, JSON.stringify(snapshot));
+    localStorage.setItem(SAVE_KEY, JSON.stringify(buildSave(g)));
     return true;
   } catch {
     return false;
   }
 }
 
+// Read the save back, or null when there is none or it is corrupt.
 export function readSave() {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
@@ -41,32 +53,31 @@ export function readSave() {
   }
 }
 
-// Fold a save back into a fresh game. Missing pieces keep their defaults.
-export function applySave(game, data) {
+// Apply a loaded save onto a fresh game object. Only the fields the save
+// owns are touched; the world itself is rebuilt from the seed.
+export function applySave(g, data) {
   if (!data) return;
-  if (typeof data.cash === 'number') game.player.cash = data.cash;
-  if (typeof data.health === 'number') game.player.health = data.health;
-  if (data.garage) Object.assign(game.garage, data.garage);
-  if (data.empire) {
-    game.empire.owned = data.empire.owned ?? {};
-    game.empire.totalEarned = data.empire.totalEarned ?? 0;
+  g.player.cash = data.cash ?? g.player.cash;
+  g.player.wanted = data.wanted ?? 0;
+  g.player.health = data.health ?? 100;
+  g.player.respect = data.respect ?? 0;
+  if (data.mission) {
+    g.mission.index = data.mission.index ?? 0;
+    g.mission.done = [...(data.mission.done ?? [])];
   }
-  if (data.roster) game.roster.hired = data.roster.hired ?? {};
+  if (data.empire) {
+    g.empire.owned = data.empire.owned ?? {};
+    g.empire.totalEarned = data.empire.totalEarned ?? 0;
+  }
+  if (data.roster) g.roster.hired = data.roster.hired ?? {};
   if (data.streetRaces) {
-    game.streetRaces.won = data.streetRaces.won ?? 0;
-    game.streetRaces.best = data.streetRaces.best ?? {};
+    g.streetRaces.won = data.streetRaces.won ?? 0;
+    g.streetRaces.best = data.streetRaces.best ?? {};
   }
   if (data.districtStanding) {
-    Object.assign(game.player.districtStanding, data.districtStanding);
+    Object.assign(g.player.districtStanding, data.districtStanding);
   }
-  if (data.missions) {
-    game.mission.done = data.missions.done ?? [];
-    game.mission.index = data.missions.index ?? 0;
-  }
-  if (data.stats) Object.assign(game.stats, data.stats);
-  if (typeof data.clockHour === 'number') game.clock.hour = data.clockHour;
-  if (data.player) {
-    game.player.x = data.player.x ?? game.player.x;
-    game.player.z = data.player.z ?? game.player.z;
-  }
+  if (data.garage) Object.assign(g.garage, data.garage);
+  if (typeof data.clockHour === 'number') g.clock.hour = data.clockHour;
+  if (data.stats) Object.assign(g.stats, data.stats);
 }

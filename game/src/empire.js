@@ -1,53 +1,64 @@
-// The business empire for Solmar Heat. No dependencies.
-// Four storefronts the player buys and levels up. Each one pays out when
-// the clock crosses an hour: $35 an hour for a level-1 laundry in the day,
-// half again as much at night.
+// The empire. Four businesses the player can buy at their storefronts.
+// Each owned business pays its hourly rate as the clock crosses each
+// hour boundary, nights paying a little more. The take lands straight
+// in the player's cash and in totalEarned.
 
-export const BUSINESSES = [
-  { id: 'solmar-laundry', name: 'Solmar Laundry', cost: 500, income: 35 },
-  { id: 'sunset-diner', name: 'Sunset Diner', cost: 1200, income: 80 },
-  { id: 'taco-bay', name: 'Taco Bay', cost: 2000, income: 130 },
-  { id: 'vinyl-records', name: 'Vinyl Records', cost: 3500, income: 220 },
-];
-
-export function businessById(id) {
-  return BUSINESSES.find((b) => b.id === id) ?? null;
-}
+import { BUSINESSES } from './config.js';
 
 export function makeEmpire() {
-  return { owned: {}, totalEarned: 0, lastHour: 18 };
+  return {
+    owned: {},
+    totalEarned: 0,
+    // The last whole hour the income tick ran for. The tick pays for
+    // every hour boundary the clock crosses, so a jumped clock still
+    // pays (capped, so a wild jump cannot print a fortune).
+    lastHour: 18,
+  };
 }
 
-// One business's hourly take, night paying half again as much.
-export function businessIncome(business, level, isNight) {
-  return business.income * level * (isNight ? 1.5 : 1);
+// Buy a business: pay the price, own it at level 1. Returns true when
+// the deal closes.
+export function buyBusiness(g, id) {
+  const biz = BUSINESSES[id];
+  if (!biz) return false;
+  if (g.empire.owned[id]) return false;
+  if (g.player.cash < biz.price) return false;
+  g.player.cash -= biz.price;
+  g.empire.owned[id] = { level: 1, boughtAt: g.time };
+  return true;
 }
 
-// Pay out for every whole hour the clock crossed since the last tick.
-// `hour` is the clock's current hour; the empire remembers where it left
-// off, so a jump forward pays for each hour crossed and a jump back pays
-// nothing.
-export function payIncome(empire, player, hour, isNight) {
-  const from = empire.lastHour;
-  empire.lastHour = hour;
-  if (hour <= from) return 0;
-  let paid = 0;
-  for (let h = Math.floor(from) + 1; h <= Math.floor(hour); h += 1) {
-    for (const [id, holding] of Object.entries(empire.owned)) {
-      const business = businessById(id);
-      if (!business) continue;
-      const take = businessIncome(business, holding.level, isNight);
-      paid += take;
-    }
+// The hourly rate of one owned business right now.
+export function hourlyRate(g, id) {
+  const biz = BUSINESSES[id];
+  const owned = g.empire.owned[id];
+  if (!biz || !owned) return 0;
+  const night = g.clock.isNight ? biz.nightBoost : 1;
+  return Math.round(biz.income * owned.level * night);
+}
+
+// Run the income tick: pay for every hour boundary crossed since the
+// last tick, capped at five hours a frame so a clock jump cannot pay a
+// fortune. Called once a frame from the main loop.
+export function tickEmpireIncome(g) {
+  const now = Math.floor(g.clock.hour);
+  let last = Math.floor(g.empire.lastHour);
+  if (now === last) return;
+  // The clock wraps at midnight: 23 -> 0 is one hour, not minus 23.
+  let hours = now - last;
+  if (hours < 0) hours += 24;
+  if (hours <= 0) return;
+  hours = Math.min(hours, 5);
+  let pay = 0;
+  for (const id of Object.keys(g.empire.owned)) pay += hourlyRate(g, id) * hours;
+  if (pay > 0) {
+    g.player.cash += pay;
+    g.empire.totalEarned += pay;
   }
-  if (paid > 0) {
-    player.cash += paid;
-    empire.totalEarned += paid;
-  }
-  return paid;
+  g.empire.lastHour = g.clock.hour;
 }
 
-// How many businesses the player owns.
-export function ownedCount(empire) {
-  return Object.keys(empire.owned).length;
+// True when the player owns at least one business.
+export function ownsAnyBusiness(g) {
+  return Object.keys(g.empire.owned).length > 0;
 }

@@ -1,59 +1,55 @@
-// The crew for Solmar Heat. No dependencies.
-// Three fixers the player hires at the Crew Office. Each one changes how
-// the game plays, and the HUD shows the hired ones as ability cards.
+// The crew. Three mates, each with a hire price and an effect the game
+// really applies: Milo sharpens the handling, Vera slows the heat decay,
+// Tank hardens every hit. A hired mate also knocks 10% off the garage.
 
-export const CREW = [
-  {
-    id: 'milo',
-    name: 'Milo',
-    initial: 'M',
-    cost: 900,
-    effect: 'Handling +25%',
-    desc: 'A wheelman. The car turns sharper and holds the road.',
-  },
-  {
-    id: 'vera',
-    name: 'Vera',
-    initial: 'V',
-    cost: 1400,
-    effect: 'Heat decays 1.6×',
-    desc: 'A cleaner. Wanted stars cool off almost twice as fast.',
-  },
-  {
-    id: 'tank',
-    name: 'Tank',
-    initial: 'T',
-    cost: 1800,
-    effect: 'Ram damage 1.5×',
-    desc: 'A battering ram. Ramming a cop car hits half again as hard.',
-  },
-];
+import { CREW, CREW_DISCOUNT } from './config.js';
 
-export function crewById(id) {
-  return CREW.find((c) => c.id === id) ?? null;
+export function makeRoster() {
+  return { hired: {} };
 }
 
-// How many mates are on the roster.
-export function crewCount(roster) {
-  return Object.keys(roster.hired).length;
+// The price of a mate, with the crew discount never stacking on itself.
+export function crewPrice(id) {
+  return CREW[id].price;
 }
 
-// True when at least one mate is hired: the garage gives the crew rate.
-export function hasCrew(roster) {
-  return crewCount(roster) > 0;
+// Hire a mate: pay, mark them active, and return true. Fails when the
+// player cannot afford them or already has them.
+export function hireMate(g, id) {
+  const mate = CREW[id];
+  if (!mate) return false;
+  if (g.roster.hired[id]) return false;
+  if (g.player.cash < mate.price) return false;
+  g.player.cash -= mate.price;
+  g.roster.hired[id] = { active: true, hiredAt: g.time };
+  return true;
 }
 
-// Handling multiplier: Milo sharpens the steering.
-export function handlingBonus(roster) {
-  return roster.hired.milo ? 1.25 : 1;
+// The handling multiplier the car gets: Milo adds a quarter.
+export function handlingMultiplier(g) {
+  return g.roster.hired.milo ? 1.25 : 1;
 }
 
-// Wanted decay multiplier: Vera cools the heat off faster.
-export function decayBonus(roster) {
-  return roster.hired.vera ? 1.6 : 1;
+// The wanted-decay multiplier: Vera stretches each star out 1.6x.
+export function decayMultiplier(g) {
+  return g.roster.hired.vera ? 1.6 : 1;
 }
 
-// Ram damage multiplier: Tank hits harder.
-export function ramBonus(roster) {
-  return roster.hired.tank ? 1.5 : 1;
+// The damage multiplier: Tank lands half again as hard.
+export function damageMultiplier(g) {
+  return g.roster.hired.tank ? 1.5 : 1;
+}
+
+// The garage discount: any hired mate takes 10% off.
+export function hasCrewDiscount(g) {
+  return Object.keys(g.roster.hired).length > 0;
+}
+
+export function discounted(price, g) {
+  return hasCrewDiscount(g) ? Math.round(price * CREW_DISCOUNT) : price;
+}
+
+// The mates the HUD shows as ability cards.
+export function hiredMates(g) {
+  return Object.keys(g.roster.hired).map((id) => CREW[id]);
 }

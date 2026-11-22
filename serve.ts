@@ -1,38 +1,35 @@
-// A tiny static server for local play: serves the repo root (game/ and
-// screenshots/) on http://localhost:8080. Node 22, stdlib only.
+// A tiny static server for playing Solmar Heat in desktop Chrome.
+// Serves game/ at http://localhost:8080 — open that URL and the game
+// loads straight from the files, no build step. Node's standard library
+// only; nothing to install.
+//
+// Run it:  node serve.ts
+// Then open http://localhost:8080 in Chrome.
 
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { extname, join, resolve, dirname } from 'node:path';
+import { join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = dirname(fileURLToPath(import.meta.url));
-const port = Number(process.env.PORT || 8080);
+const here = fileURLToPath(new URL('.', import.meta.url));
+const gameDir = join(here, 'game');
+const PORT = 8080;
 
 const types = {
   '.html': 'text/html',
   '.js': 'text/javascript',
   '.mjs': 'text/javascript',
+  '.css': 'text/css',
   '.json': 'application/json',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.css': 'text/css',
 };
 
 const server = createServer(async (req, res) => {
+  const path = req.url.split('?')[0] === '/' ? '/index.html' : req.url.split('?')[0];
   try {
-    const url = new URL(req.url || '/', 'http://localhost');
-    let path = decodeURIComponent(url.pathname);
-    if (path === '/') path = '/game/index.html';
-    const file = resolve(join(root, '.' + path));
-    if (!file.startsWith(root)) {
-      res.writeHead(403);
-      res.end('forbidden');
-      return;
-    }
-    const data = await readFile(file);
-    res.writeHead(200, { 'content-type': types[extname(file)] || 'application/octet-stream' });
+    const data = await readFile(join(gameDir, decodeURIComponent(path)));
+    res.writeHead(200, { 'content-type': types[extname(path)] ?? 'application/octet-stream' });
     res.end(data);
   } catch {
     res.writeHead(404);
@@ -40,6 +37,6 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(port, () => {
-  console.log('Solmar Heat at http://localhost:' + port + '/');
+server.listen(PORT, () => {
+  console.log(`Solmar Heat at http://localhost:${PORT}`);
 });
