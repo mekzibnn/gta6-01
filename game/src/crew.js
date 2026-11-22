@@ -1,62 +1,59 @@
-// Solmar Heat v9 — the crew.
-// Three mates, three perks, one discount. Milo sharpens the handling,
-// Vera cools the heat faster, Tank hits harder. Any mate on the payroll
-// gets Leo ten percent off at the garage.
+// The crew for Solmar Heat. No dependencies.
+// Three fixers the player hires at the Crew Office. Each one changes how
+// the game plays, and the HUD shows the hired ones as ability cards.
 
-export const MATES = [
-  { id: 'milo', name: 'Milo', perk: 'handling', cost: 900, blurb: 'Ex-racer. The car turns like it reads your mind.' },
-  { id: 'vera', name: 'Vera', perk: 'decay', cost: 1400, blurb: 'Fixer. The heat forgets you faster.' },
-  { id: 'tank', name: 'Tank', perk: 'damage', cost: 1800, blurb: 'Muscle. Your punches land twice as hard.' },
+export const CREW = [
+  {
+    id: 'milo',
+    name: 'Milo',
+    initial: 'M',
+    cost: 900,
+    effect: 'Handling +25%',
+    desc: 'A wheelman. The car turns sharper and holds the road.',
+  },
+  {
+    id: 'vera',
+    name: 'Vera',
+    initial: 'V',
+    cost: 1400,
+    effect: 'Heat decays 1.6×',
+    desc: 'A cleaner. Wanted stars cool off almost twice as fast.',
+  },
+  {
+    id: 'tank',
+    name: 'Tank',
+    initial: 'T',
+    cost: 1800,
+    effect: 'Ram damage 1.5×',
+    desc: 'A battering ram. Ramming a cop car hits half again as hard.',
+  },
 ];
 
-export function initCrew() {
-  return { hired: {} };
+export function crewById(id) {
+  return CREW.find((c) => c.id === id) ?? null;
 }
 
-export function mateDef(id) {
-  return MATES.find((m) => m.id === id) || null;
+// How many mates are on the roster.
+export function crewCount(roster) {
+  return Object.keys(roster.hired).length;
 }
 
-export function hireMate(roster, player, id) {
-  const def = mateDef(id);
-  if (!def || roster.hired[id]) return -1;
-  if (player.cash < def.cost) return -1;
-  player.cash = player.cash - def.cost;
-  roster.hired[id] = { active: true };
-  return def.cost;
+// True when at least one mate is hired: the garage gives the crew rate.
+export function hasCrew(roster) {
+  return crewCount(roster) > 0;
 }
 
-export function crewHandling(roster) {
+// Handling multiplier: Milo sharpens the steering.
+export function handlingBonus(roster) {
   return roster.hired.milo ? 1.25 : 1;
 }
 
-export function crewDecay(roster) {
+// Wanted decay multiplier: Vera cools the heat off faster.
+export function decayBonus(roster) {
   return roster.hired.vera ? 1.6 : 1;
 }
 
-export function crewDamage(roster) {
+// Ram damage multiplier: Tank hits harder.
+export function ramBonus(roster) {
   return roster.hired.tank ? 1.5 : 1;
-}
-
-export function crewGarageRate(roster) {
-  return Object.keys(roster.hired).length > 0 ? 0.9 : 1;
-}
-
-export function crewNames(roster) {
-  return Object.keys(roster.hired).map((id) => {
-    const def = mateDef(id);
-    return def ? def.name : id;
-  });
-}
-
-export function serializeCrew(roster) {
-  return { hired: roster.hired };
-}
-
-export function restoreCrew(data) {
-  const roster = initCrew();
-  if (data && typeof data === 'object' && data.hired && typeof data.hired === 'object') {
-    roster.hired = data.hired;
-  }
-  return roster;
 }

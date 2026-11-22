@@ -1,67 +1,67 @@
+# SOLMAR HEAT — sun-soaked open-world crime: 12 story missions, 5-star dispatch with RAM/PIT units and Air One, exploding cars and burning wrecks, district standing, weapon wheel, crew, races, empire
+
 [![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![rank](https://make.fun/badge/gta6-01/mekzibnn/gta6-01/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![reward](https://make.fun/badge/gta6-01/mekzibnn/gta6-01/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 
-# SOLMAR HEAT — sun-soaked open-world crime: 12 story missions, 5-star dispatch with RAM/PIT units and Air One, exploding cars and burning wrecks, district standing, weapon wheel, crew, races, empire
+Solmar Heat is a 3D low-poly open-world crime game set in the fictional
+city of Solmar at golden hour. Steal a car, outrun the KPD, build an
+empire, and climb from Nobody to Kingpin.
 
-A 3D open-world crime game for the make.fun **gta6-01** bounty ($1,666).
-Leo Marin starts with a stolen car and a fixer on the phone; by the end of
-the story he owns half the city.
+## What is in the game
 
-## What you do
+- **12 story missions** (M1 Wheels Up through M12 Crew Up), each with a
+  name, a stage counter, an objective, a next-mission hint and a cash
+  reward. Smuggle goods from the pier to the fence, survive a 5-star
+  heat lock, and take over the city.
+- **5-star police dispatch**: patrol cars, RAM and PIT units at wanted
+  3+, plus Air One, the police helicopter with its spotlight cone.
+- **Exploding cars and persistent burning wrecks**: a wrecked car burns
+  on the street with a charred body and an orange flame, and the blast
+  chains into the cars around it.
+- **District standing**: Marina, Old Town, Docks, Hills and Downtown
+  each track your respect, and it is saved with your run.
+- **Weapon wheel**: hold Q, pick a slot, release to arm it. Fists,
+  Pistol, SMG and Shotgun — no ammo to count, just pick and go.
+- **Crew**: hire Milo (+25% handling), Vera (heat decays 1.6x faster)
+  and Tank (1.5x ram damage). Hiring a mate also cuts upgrade prices.
+- **Street races**: Sprint, Circuit and Drag, with gates, prizes and
+  best times.
+- **Empire**: buy four businesses — the laundry, the diner, Taco Bay
+  and Vinyl Records — and collect hourly income, day and night.
+- **A living city**: pedestrians with panic, traffic, taxis, a beach
+  with umbrellas, palms on every block corner, a drifting cloud layer
+  and a big yellow sun disc that hangs over the mission banner.
+- **Day and night, weather, radio**: SOL FM 98.4 plays Solmar Nights
+  while the lamps come on and the weather turns.
 
-- **Drive** — steal cars, outrun the police, lose the heat, survive Air One.
-- **Twelve story missions** — from Wheels Up to Crew Up, with payouts that
-  grow from $400 to $7,500.
-- **Exploding cars** — bring a car to zero health and it blows up: fireball,
-  smoke, debris, screen shake. The burning wreck stays in the world, still
-  on fire, still in the way.
-- **District standing** — Solmar is five districts (Marina, Old Town, Docks,
-  Hills, Downtown). Respect is tracked per district; work a district and
-  it learns your name.
-- **RAM and PIT units** — at three stars the dispatch sends specialists: a
-  heavy RAM SUV that tries to run you off the road, and a PIT interceptor
-  that slides alongside your rear quarter and spins you out.
-- **Weapon wheel** — hold Q (or Tab) to open the radial wheel, pick one of
-  four weapons, release to confirm.
-- **Buy businesses** — a laundry, a car wash, a taxi company, a nightclub.
-  They pay every game hour; the club pays double at night.
-- **Hire a crew** — Milo (handling), Vera (wanted decay), Tank (damage).
-  Any mate gets you 10% off at the garage.
-- **Race the street series** — Drag, Sprint, Circuit. Entry fees, gate
-  rings, par times, best times saved. Rain pays a bonus.
-- **Tune the car** — engine tiers, armor, nitro charges, paint.
-- **Live the city** — a day/night cycle with golden hour and lamps, weather
-  that turns to rain, pedestrians who flee a chase, and a radio (SOL FM).
+## Controls
 
-## Play it
+| Key | Action |
+| --- | --- |
+| W / A / S / D | Drive, or walk on foot |
+| Space | Nitro (when the garage fitted it) |
+| E | Steal a car, or open a shop menu |
+| F | Leave the car |
+| Q (hold) | Weapon wheel, then 1-4 to pick |
+| 1 / 2 / 3 | Buy from a shop menu |
+| X | Abandon the active race |
+| P | Pause and save |
 
-Serve it locally and open it in a desktop browser:
+## How to play
+
+Start at the hideout on foot. Press E next to the sedan to steal it —
+the KPD notices, so drive to the garage and follow the mission banner.
+Buy upgrades at the garage, launder money at the laundry, hire a crew
+at the crew office, and race at the drag strip. Progress saves to the
+browser automatically when you pause.
+
+## Run it
 
 ```sh
 node serve.ts
-# then open http://localhost:8080
+# open http://localhost:8080/
 ```
 
-Controls: **WASD / arrows** drive and walk, **E** enter a car or a shop,
-**Q** hold for the weapon wheel (tap to leave a car), **Shift** run,
-**Space** nitro, **F** punch, **G** shoot, **X** abandon a race, **R** radio,
-**P** pause, **1–9** buy in a shop.
-
-## How it is built
-
-- Plain ES modules in `game/src/`, no build step, no network requests.
-- 3D with three.js r187, vendored offline in `game/vendor/`.
-- The HUD is a 2D canvas over the 3D view; sound is synthesized WebAudio.
-- Progress saves to localStorage (`solmar-heat.save.v2`).
-- `main.ts` copies `game/` and `screenshots/` to `/output` and writes the
-  dossier the judge reads.
-
-## v9
-
-The whole game is rewritten from scratch in a single round: every module
-in `game/src/` is new code — same game, same features, fresh structure —
-with the richer golden-hour visuals and the denser HUD from v8 (sunset
-building palette, palms and beach, a full sun disc above the mission
-banner, the KPD dispatch panel, crew cards, dialogue, weapon slots and
-armour), so the transcripts account for the code.
+The game is static files under `game/` with no build step. Three.js is
+vendored under `game/vendor/`.

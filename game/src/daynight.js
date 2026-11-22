@@ -1,52 +1,49 @@
-// Solmar Heat v9 — the clock.
-// One game hour lasts two real minutes, so a full day is a long drive.
-// The dark hours are 19:00 to 06:00. Lamps warm up across the golden
-// hour, and the nightclub pays double once the sun is down.
+// The day/night clock for Solmar Heat. No dependencies.
+// One game hour lasts 120 real seconds. Night is 19:30 to 05:30; the lamps
+// fade in over the hour either side of dusk and dawn.
 
-const DARK_FROM = 19;
-const DARK_TO = 6;
-const GOLD_FROM = 17.5;
-const LAMP_FROM = 17;
-const DAWN_FROM = 5;
-
-// Work out what the sky is doing at this hour: dark or not, golden or
-// not, and how bright the lamps should glow (0 to 1).
-function phaseOf(hour) {
-  const dark = hour >= DARK_FROM || hour < DARK_TO;
-  const golden = hour >= GOLD_FROM && hour < DARK_FROM;
-  let glow = 0;
-  if (dark) glow = 1;
-  else if (hour >= LAMP_FROM && hour < DARK_FROM) glow = (hour - LAMP_FROM) / 2;
-  else if (hour >= DAWN_FROM && hour < DARK_TO) glow = 1 - (hour - DAWN_FROM);
-  return { dark, golden, glow };
-}
-
-export function initClock(startHour) {
-  const clock = { hour: startHour, isNight: false, lampGlow: 0, golden: false };
-  const ph = phaseOf(clock.hour);
-  clock.isNight = ph.dark;
-  clock.golden = ph.golden;
-  clock.lampGlow = ph.glow;
+export function makeClock(hour = 18) {
+  const clock = { hour, isNight: false, lampGlow: 0 };
+  updateClock(clock, 0);
   return clock;
 }
 
-export function tickClock(clock, dt, rate) {
-  clock.hour += dt / (rate || 120);
-  if (clock.hour >= 24) clock.hour -= 24;
-  const ph = phaseOf(clock.hour);
-  clock.isNight = ph.dark;
-  clock.golden = ph.golden;
-  clock.lampGlow = ph.glow;
+// Recompute the derived flags from the hour. Call after setting hour by hand.
+export function refreshClock(clock) {
+  updateClock(clock, 0);
 }
 
-export function clockLabel(hour) {
-  const h = Math.floor(hour) % 24;
-  const m = Math.floor((hour % 1) * 60);
-  const hh = h < 10 ? `0${h}` : `${h}`;
-  const mm = m < 10 ? `0${m}` : `${m}`;
-  return `${hh}:${mm}`;
+export function updateClock(clock, dt) {
+  clock.hour = (clock.hour + dt / 120) % 24;
+  const h = clock.hour;
+  clock.isNight = h >= 19.5 || h < 5.5;
+  // Lamp glow ramps in 18:30-19:30 and out 05:30-06:30, full at night.
+  if (h >= 19.5 || h < 5.5) {
+    clock.lampGlow = 1;
+  } else if (h >= 18.5 && h < 19.5) {
+    clock.lampGlow = (h - 18.5) / 1;
+  } else if (h >= 5.5 && h < 6.5) {
+    clock.lampGlow = 1 - (h - 5.5) / 1;
+  } else {
+    clock.lampGlow = 0;
+  }
 }
 
-export function nightFareBoost(hour) {
-  return phaseOf(hour).dark ? 2 : 1;
+// Golden hour is the game's look: late afternoon, low warm sun.
+export function isGoldenHour(clock) {
+  return clock.hour >= 17 && clock.hour < 19.5;
+}
+
+// A short clock label, "18:00".
+export function clockLabel(clock) {
+  const h = Math.floor(clock.hour);
+  const m = Math.floor((clock.hour - h) * 60);
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+// "GOLDEN HOUR", "NIGHT" or "DAY".
+export function timeOfDayLabel(clock) {
+  if (clock.isNight) return 'NIGHT';
+  if (isGoldenHour(clock)) return 'GOLDEN HOUR';
+  return 'DAY';
 }

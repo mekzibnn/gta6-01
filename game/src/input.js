@@ -1,58 +1,31 @@
-// Solmar Heat v9 — keyboard and mouse.
-// Tracks which keys are held and which were just pressed. readKeys()
-// returns the driving state plus the edge-triggered presses since the
-// last call, then clears them — so a tap is seen exactly once.
+// Keyboard input for Solmar Heat.
+// Held keys live in a Set the game loop polls (W to drive, Space for
+// nitro, Q held for the weapon wheel). Discrete actions fire from the
+// keydown event itself, so a quick tap can never fall between frames:
+// E interacts, digits buy or pick a weapon, X abandons a race, P pauses
+// and saves, F steps out of a car.
 
-const SCROLL_KEYS = ['Space', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
-
-export function initInput(canvas) {
-  const input = {
-    keys: {},
-    pressed: {},
-    mouse: { x: 0, y: 0, down: false },
+export function bindInput(game, actions) {
+  const onDown = (e) => {
+    if (e.code === 'Space') e.preventDefault();
+    if (e.repeat) return;
+    game.keys.add(e.code);
+    actions.onKeyDown(e.code);
   };
-  const down = (e) => {
-    if (SCROLL_KEYS.includes(e.code)) e.preventDefault();
-    if (!input.keys[e.code]) input.pressed[e.code] = true;
-    input.keys[e.code] = true;
+  const onUp = (e) => {
+    game.keys.delete(e.code);
+    actions.onKeyUp(e.code);
   };
-  const up = (e) => {
-    input.keys[e.code] = false;
+  const onBlur = () => {
+    game.keys.clear();
+    actions.onKeyUp('KeyQ');
   };
-  window.addEventListener('keydown', down);
-  window.addEventListener('keyup', up);
-  window.addEventListener('blur', () => {
-    input.keys = {};
-  });
-  if (canvas) {
-    canvas.addEventListener('pointermove', (e) => {
-      const rect = canvas.getBoundingClientRect();
-      input.mouse.x = e.clientX - rect.left;
-      input.mouse.y = e.clientY - rect.top;
-    });
-    canvas.addEventListener('pointerdown', () => {
-      input.mouse.down = true;
-    });
-    canvas.addEventListener('pointerup', () => {
-      input.mouse.down = false;
-    });
-  }
-  return input;
-}
-
-export function readKeys(input) {
-  const k = input.keys;
-  const justPressed = input.pressed;
-  input.pressed = {};
-  return {
-    up: !!(k.KeyW || k.ArrowUp),
-    down: !!(k.KeyS || k.ArrowDown),
-    left: !!(k.KeyA || k.ArrowLeft),
-    right: !!(k.KeyD || k.ArrowRight),
-    run: !!(k.ShiftLeft || k.ShiftRight),
-    nitro: !!k.Space,
-    heldQ: !!k.KeyQ,
-    heldTab: !!k.Tab,
-    justPressed,
+  window.addEventListener('keydown', onDown);
+  window.addEventListener('keyup', onUp);
+  window.addEventListener('blur', onBlur);
+  return () => {
+    window.removeEventListener('keydown', onDown);
+    window.removeEventListener('keyup', onUp);
+    window.removeEventListener('blur', onBlur);
   };
 }

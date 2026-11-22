@@ -1,80 +1,53 @@
-// Solmar Heat v9 — the business empire.
-// Four fronts to buy: a laundry, a car wash, a taxi company, and a
-// nightclub that pays double after dark. They pay every game hour, and
-// the take lands in the player's pocket whether Leo is there or not.
-// Each level multiplies the hourly take; upgrading costs the base price
-// times the current level.
+// The business empire for Solmar Heat. No dependencies.
+// Four storefronts the player buys and levels up. Each one pays out when
+// the clock crosses an hour: $35 an hour for a level-1 laundry in the day,
+// half again as much at night.
 
-export const VENTURES = [
-  { id: 'solmar-laundry', name: 'Solmar Laundry', cost: 500, hourly: 35, night: false },
-  { id: 'sunset-carwash', name: 'Sunset Car Wash', cost: 1200, hourly: 70, night: false },
-  { id: 'sunset-taxi', name: 'Sunset Taxi Co.', cost: 2500, hourly: 120, night: false },
-  { id: 'club-neon', name: 'Club Neon', cost: 5000, hourly: 200, night: true },
+export const BUSINESSES = [
+  { id: 'solmar-laundry', name: 'Solmar Laundry', cost: 500, income: 35 },
+  { id: 'sunset-diner', name: 'Sunset Diner', cost: 1200, income: 80 },
+  { id: 'taco-bay', name: 'Taco Bay', cost: 2000, income: 130 },
+  { id: 'vinyl-records', name: 'Vinyl Records', cost: 3500, income: 220 },
 ];
 
-export function initEmpire() {
-  return { owned: {}, totalEarned: 0 };
+export function businessById(id) {
+  return BUSINESSES.find((b) => b.id === id) ?? null;
 }
 
-export function ventureDef(id) {
-  return VENTURES.find((v) => v.id === id) || null;
+export function makeEmpire() {
+  return { owned: {}, totalEarned: 0, lastHour: 18 };
 }
 
-export function ventureHourly(def, level, hour) {
-  if (!def) return 0;
-  const dark = hour >= 19 || hour < 6;
-  const boost = def.night && dark ? 2 : 1;
-  return def.hourly * (level || 1) * boost;
+// One business's hourly take, night paying half again as much.
+export function businessIncome(business, level, isNight) {
+  return business.income * level * (isNight ? 1.5 : 1);
 }
 
-export function empireHourly(empire, hour) {
-  let total = 0;
-  for (const id of Object.keys(empire.owned)) {
-    const def = ventureDef(id);
-    total = total + ventureHourly(def, empire.owned[id].level, hour);
+// Pay out for every whole hour the clock crossed since the last tick.
+// `hour` is the clock's current hour; the empire remembers where it left
+// off, so a jump forward pays for each hour crossed and a jump back pays
+// nothing.
+export function payIncome(empire, player, hour, isNight) {
+  const from = empire.lastHour;
+  empire.lastHour = hour;
+  if (hour <= from) return 0;
+  let paid = 0;
+  for (let h = Math.floor(from) + 1; h <= Math.floor(hour); h += 1) {
+    for (const [id, holding] of Object.entries(empire.owned)) {
+      const business = businessById(id);
+      if (!business) continue;
+      const take = businessIncome(business, holding.level, isNight);
+      paid += take;
+    }
   }
-  return total;
-}
-
-export function buyVenture(empire, player, id) {
-  const def = ventureDef(id);
-  if (!def || empire.owned[id]) return -1;
-  if (player.cash < def.cost) return -1;
-  player.cash = player.cash - def.cost;
-  empire.owned[id] = { level: 1 };
-  return def.cost;
-}
-
-export function upgradeVenture(empire, player, id) {
-  const def = ventureDef(id);
-  const owned = empire.owned[id];
-  if (!def || !owned) return -1;
-  const cost = def.cost * owned.level;
-  if (player.cash < cost) return -1;
-  player.cash = player.cash - cost;
-  owned.level = owned.level + 1;
-  return cost;
-}
-
-export function accrueEmpire(empire, hours, player, hour) {
-  if (hours <= 0) return 0;
-  const take = empireHourly(empire, hour) * hours;
-  if (take > 0) {
-    player.cash = player.cash + take;
-    empire.totalEarned = empire.totalEarned + take;
+  if (paid > 0) {
+    player.cash += paid;
+    empire.totalEarned += paid;
   }
-  return take;
+  return paid;
 }
 
-export function serializeEmpire(empire) {
-  return { owned: empire.owned, totalEarned: empire.totalEarned };
-}
-
-export function restoreEmpire(data) {
-  const empire = initEmpire();
-  if (data && typeof data === 'object') {
-    if (data.owned && typeof data.owned === 'object') empire.owned = data.owned;
-    if (typeof data.totalEarned === 'number') empire.totalEarned = Math.max(0, data.totalEarned);
-  }
-  return empire;
+// How many businesses the player owns.
+export function ownedCount(empire) {
+  return Object.keys(empire.owned).length;
 }

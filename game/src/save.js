@@ -1,82 +1,72 @@
-// Solmar Heat v9 — career save.
-// One localStorage key holds the whole career. The shape is versioned:
-// a save written by another version is ignored and the player starts
-// fresh. The key stays the same across versions so a career survives
-// a rebuild of the game code.
+// Saving and loading for Solmar Heat.
+// One localStorage key, versioned. The shape is flat on purpose: the pause
+// screen writes it, the next session reads it back, and nothing else
+// touches it.
 
-export const SAVE_KEY = 'solmar-heat.save.v2';
-export const SAVE_VERSION = 2;
+import { SAVE_KEY } from './config.js';
 
-export function blankCareer() {
-  return {
-    v: SAVE_VERSION,
-    cash: 400,
-    respect: 0,
-    districtStanding: { marina: 0, oldtown: 0, docks: 0, hills: 0, downtown: 0 },
-    empire: { owned: {}, totalEarned: 0 },
-    roster: { hired: {} },
-    streetRaces: { won: 0, best: {} },
-    garage: { engine: 0, armor: 0, nitro: 0, paint: 'Sunset Orange' },
-    missionsDone: [],
-    timePlayed: 0,
-  };
-}
-
-// Clean a loaded save: keep every sane field, throw away anything odd.
-// Numbers are floored and clamped at zero; unknown keys are dropped.
-function saneCareer(raw) {
-  const blank = blankCareer();
-  if (!raw || typeof raw !== 'object' || raw.v !== SAVE_VERSION) return blank;
-  const out = { ...blank };
-  const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.floor(v)) : null);
-  const cash = num(raw.cash);
-  if (cash !== null) out.cash = cash;
-  const respect = num(raw.respect);
-  if (respect !== null) out.respect = respect;
-  if (raw.districtStanding && typeof raw.districtStanding === 'object') {
-    for (const key of Object.keys(out.districtStanding)) {
-      const val = num(raw.districtStanding[key]);
-      if (val !== null) out.districtStanding[key] = val;
-    }
-  }
-  if (raw.empire && typeof raw.empire === 'object') {
-    if (raw.empire.owned && typeof raw.empire.owned === 'object') out.empire.owned = raw.empire.owned;
-    if (typeof raw.empire.totalEarned === 'number') out.empire.totalEarned = Math.max(0, raw.empire.totalEarned);
-  }
-  if (raw.roster && typeof raw.roster === 'object' && raw.roster.hired && typeof raw.roster.hired === 'object') {
-    out.roster.hired = raw.roster.hired;
-  }
-  if (raw.streetRaces && typeof raw.streetRaces === 'object') {
-    if (typeof raw.streetRaces.won === 'number') out.streetRaces.won = Math.max(0, raw.streetRaces.won);
-    if (raw.streetRaces.best && typeof raw.streetRaces.best === 'object') out.streetRaces.best = raw.streetRaces.best;
-  }
-  if (raw.garage && typeof raw.garage === 'object') {
-    for (const key of ['engine', 'armor', 'nitro']) {
-      const val = num(raw.garage[key]);
-      if (val !== null) out.garage[key] = val;
-    }
-    if (typeof raw.garage.paint === 'string') out.garage.paint = raw.garage.paint;
-  }
-  if (Array.isArray(raw.missionsDone)) out.missionsDone = raw.missionsDone.filter((m) => typeof m === 'string');
-  if (typeof raw.timePlayed === 'number' && Number.isFinite(raw.timePlayed)) out.timePlayed = Math.max(0, raw.timePlayed);
-  return out;
-}
-
-export function readCareer() {
+export function writeSave(game) {
   try {
-    const raw = window.localStorage.getItem(SAVE_KEY);
-    if (!raw) return blankCareer();
-    return saneCareer(JSON.parse(raw));
-  } catch {
-    return blankCareer();
-  }
-}
-
-export function writeCareer(career) {
-  try {
-    window.localStorage.setItem(SAVE_KEY, JSON.stringify(career));
+    const snapshot = {
+      version: 2,
+      cash: game.player.cash,
+      health: game.player.health,
+      wanted: game.player.wanted,
+      garage: game.garage,
+      empire: game.empire,
+      roster: game.roster,
+      streetRaces: game.streetRaces,
+      districtStanding: game.player.districtStanding,
+      missions: { done: game.mission.done, index: game.mission.index },
+      stats: game.stats,
+      clockHour: game.clock.hour,
+      player: { x: game.player.x, z: game.player.z },
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(snapshot));
     return true;
   } catch {
     return false;
+  }
+}
+
+export function readSave() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data || data.version !== 2) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+// Fold a save back into a fresh game. Missing pieces keep their defaults.
+export function applySave(game, data) {
+  if (!data) return;
+  if (typeof data.cash === 'number') game.player.cash = data.cash;
+  if (typeof data.health === 'number') game.player.health = data.health;
+  if (data.garage) Object.assign(game.garage, data.garage);
+  if (data.empire) {
+    game.empire.owned = data.empire.owned ?? {};
+    game.empire.totalEarned = data.empire.totalEarned ?? 0;
+  }
+  if (data.roster) game.roster.hired = data.roster.hired ?? {};
+  if (data.streetRaces) {
+    game.streetRaces.won = data.streetRaces.won ?? 0;
+    game.streetRaces.best = data.streetRaces.best ?? {};
+  }
+  if (data.districtStanding) {
+    Object.assign(game.player.districtStanding, data.districtStanding);
+  }
+  if (data.missions) {
+    game.mission.done = data.missions.done ?? [];
+    game.mission.index = data.missions.index ?? 0;
+  }
+  if (data.stats) Object.assign(game.stats, data.stats);
+  if (typeof data.clockHour === 'number') game.clock.hour = data.clockHour;
+  if (data.player) {
+    game.player.x = data.player.x ?? game.player.x;
+    game.player.z = data.player.z ?? game.player.z;
   }
 }

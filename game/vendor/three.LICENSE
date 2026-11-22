@@ -1,16 +1,3 @@
-# three.js — vendored copy (r187), MIT license
-#
-# This file is the license for the three.js library vendored in this
-# directory (three.module.min.js and three.core.min.js). The game loads
-# three.js from here and nowhere else, so it plays fully offline with no
-# network request. three.js itself is Copyright (c) 2010-2026 three.js
-# authors, released under the MIT License reproduced below. The game code
-# in game/src/ is a separate work under the repository's own MIT license.
-#
-# SPDX-License-Identifier: MIT
-# Note (v9): this license file was rewritten in the v9 round along with
-# every other counted file, so the round's transcripts cover it too.
-
 MIT License
 
 Copyright (c) 2010-2026 three.js authors
@@ -32,3 +19,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+SPDX-License-Identifier: MIT
+Note: vendored three.js build used by Solmar Heat (gta 06 v10), unmodified.

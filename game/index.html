@@ -1,30 +1,18 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Solmar Heat — sun-soaked open-world crime: 12 story missions, 5-star dispatch with RAM/PIT units and Air One, exploding cars and burning wrecks, district standing, weapon wheel, crew, races, empire, garage, respect, saves, radio.">
 <title>Solmar Heat — Streets of the Sun</title>
 <style>
-  /* The game fills the whole window. The deep blue behind it only shows
-     while the 3D view is still warming up. */
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1b26; }
-  /* The 3D canvas owns the window and takes the pointer for mouse aiming. */
-  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  /* The HUD floats above the 3D view but never eats a click — every
-     pointer event falls through to the game canvas below it. */
-  #hud { position: fixed; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
-  /* A status line for screen readers: spoken, never seen. */
-  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #141c33; }
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #hud { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 </style>
-<script type="importmap">
-{ "imports": { "three": "./vendor/three.module.min.js" } }
-</script>
 </head>
 <body>
-<canvas id="game" aria-label="Solmar Heat: a 3D open-world crime game. Drive, steal cars, outrun the police and their RAM and PIT units, run twelve story missions, buy businesses, hire a crew, race the street series, tune your car at the garage, watch cars explode into burning wrecks, and earn standing in every district of Solmar City."></canvas>
-<canvas id="hud" aria-hidden="true"></canvas>
-<p id="status" role="status" aria-live="polite"></p>
+<canvas id="game"></canvas>
+<canvas id="hud"></canvas>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

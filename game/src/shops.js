@@ -1,129 +1,142 @@
-// Solmar Heat v9 — storefronts.
-// Every place you can walk up to and press E. A shop is a label and a
-// radius; a menu is a list of numbered buys. Buying closes the menu.
-// The Chop Shop is not a menu — drive a car in and it is sold on the spot.
+// Shops and menus for Solmar Heat.
+// A shop is a storefront the player walks up to: the HUD names it, E opens
+// its menu, and a digit buys. The Chop Shop is different: driving a car
+// into it sells the car on the spot.
 
-import { WEAPONS } from './config.js';
-import { ventureDef, buyVenture, upgradeVenture } from './empire.js';
-import { mateDef, hireMate, crewGarageRate } from './crew.js';
-import { raceDef, startRace } from './races.js';
-import { engineCost, buyEngine, armorCost, buyArmor, buyNitro, buyPaint } from './upgrades.js';
-import { healPlayer } from './actors.js';
+import { BUSINESSES, businessById } from './empire.js';
+import { CREW } from './crew.js';
+import { RACES, raceById, startRace } from './races.js';
+import { enginePrice, armorPrice, nitroPrice, engineLabel, armorLabel } from './upgrades.js';
 
-const RADIUS = 10;
-const ENGINE_NAMES = ['', 'Street', 'Race', 'Pro'];
-const ARMOR_NAMES = ['', 'Light', 'Heavy'];
-const PAINTS = ['Sunset Orange', 'Midnight Blue', 'Lime Rush', 'Cherry Red', 'Pearl White', 'Shadow Black'];
-
-function item(slot, name, price, run) {
-  return { slot, name, price, run };
-}
-
-export function initShops(city) {
-  const at = (key) => city.spots[key];
+// Build the shop list from the city's spots. The Gun Store and the Crew
+// Office stand at fixed addresses the city knows by heart.
+export function buildShops(city) {
   const shops = [
-    { id: 'garage', label: 'Garage', kind: 'garage', x: at('garage').x, z: at('garage').z },
-    { id: 'gun', label: 'Gun Store', kind: 'gun', x: at('gunStore').x, z: at('gunStore').z },
-    { id: 'crew', label: 'Crew Office', kind: 'crew', x: at('crewOffice').x, z: at('crewOffice').z },
-    { id: 'races', label: 'Race Office', kind: 'races', x: at('dragStrip').x, z: at('dragStrip').z },
-    { id: 'diner', label: 'Diner', kind: 'food', x: at('diner').x, z: at('diner').z },
-    { id: 'chop', label: 'Chop Shop', kind: 'chop', x: at('chopShop').x, z: at('chopShop').z },
+    { id: 'gun-store', label: 'Gun Store', x: 148, z: 148, kind: 'store' },
+    { id: 'crew-office', label: 'Crew Office', x: -24, z: -196, kind: 'crew' },
+    { id: 'garage', label: 'Garage', x: city.spots.garage.x, z: city.spots.garage.z, kind: 'garage' },
+    { id: 'race-office', label: 'Race Office', x: city.spots.dragStrip.x, z: city.spots.dragStrip.z, kind: 'races' },
   ];
   const ventureSpots = {
-    'solmar-laundry': 'laundry',
-    'sunset-carwash': 'carWash',
-    'sunset-taxi': 'taxiCo',
-    'club-neon': 'nightclub',
+    'solmar-laundry': city.spots.laundry,
+    'sunset-diner': { x: 104, z: -52 },
+    'taco-bay': { x: -104, z: 52 },
+    'vinyl-records': { x: 52, z: -104 },
   };
-  for (const id of Object.keys(ventureSpots)) {
-    const def = ventureDef(id);
-    const spot = at(ventureSpots[id]);
-    shops.push({ id, label: def.name, kind: 'venture', x: spot.x, z: spot.z });
+  for (const b of BUSINESSES) {
+    const spot = ventureSpots[b.id];
+    shops.push({ id: b.id, label: b.name, x: spot.x, z: spot.z, kind: 'venture', business: b.id });
   }
   return shops;
 }
 
-export function shopNear(world) {
+// The nearest shop within ten steps, or null.
+export function updateShops(game) {
+  const px = game.player.x;
+  const pz = game.player.z;
   let best = null;
-  let bestD = RADIUS;
-  for (const shop of world.shops) {
-    const dx = shop.x - world.player.x;
-    const dz = shop.z - world.player.z;
-    const d = Math.sqrt(dx * dx + dz * dz);
+  let bestD = 10 * 10;
+  for (const shop of game.shops) {
+    const dx = shop.x - px;
+    const dz = shop.z - pz;
+    const d = dx * dx + dz * dz;
     if (d < bestD) {
       bestD = d;
       best = shop;
     }
   }
-  return best;
+  game.shopNear = best;
 }
 
-export function shopPrompt(shop) {
-  if (!shop) return '';
-  if (shop.kind === 'chop') return `Drive in to sell — ${shop.label}`;
-  return `E — ${shop.label}`;
-}
-
-export function garageMenu(world) {
-  const rate = crewGarageRate(world.roster);
-  const items = [];
-  const nextEngine = world.garage.engine + 1;
-  if (nextEngine < 4) {
-    items.push(item(1, `Engine ${nextEngine} — ${ENGINE_NAMES[nextEngine]}`, engineCost(nextEngine, rate), () => buyEngine(world.garage, world.player, rate, world.car) >= 0));
+// The menu items for the open shop: [digit, label, price].
+export function menuItems(game) {
+  const open = game.shopOpen;
+  if (!open) return [];
+  if (open.kind === 'garage') {
+    const items = [];
+    const ePrice = enginePrice(game.garage, game.roster);
+    if (ePrice !== null) items.push(['1', `Engine — ${engineLabel(game.garage.engine + 1)}`, ePrice]);
+    items.push(['2', 'Nitro charge', nitroPrice(game.roster)]);
+    const aPrice = armorPrice(game.garage, game.roster);
+    if (aPrice !== null) items.push(['3', `Armour — ${armorLabel(game.garage.armor + 1)}`, aPrice]);
+    return items;
   }
-  const nextArmor = world.garage.armor + 1;
-  if (nextArmor < 3) {
-    items.push(item(2, `Armor ${nextArmor} — ${ARMOR_NAMES[nextArmor]}`, armorCost(nextArmor, rate), () => buyArmor(world.garage, world.player, rate) >= 0));
+  if (open.kind === 'venture') {
+    const business = businessById(open.shopId);
+    if (!business) return [];
+    const owned = game.empire.owned[business.id];
+    if (!owned) return [['1', `Buy ${business.name}`, business.cost]];
+    return [['1', `Upgrade ${business.name} to level ${owned.level + 1}`, business.cost * owned.level]];
   }
-  items.push(item(3, 'Nitro charge', 300, () => buyNitro(world.garage, world.player) >= 0));
-  const nextPaint = PAINTS[(PAINTS.indexOf(world.garage.paint) + 1) % PAINTS.length];
-  items.push(item(4, `Paint — ${nextPaint}`, 200, () => buyPaint(world.garage, world.player, nextPaint) >= 0));
-  return items;
-}
-
-export function ventureMenu(world, ventureId) {
-  const def = ventureDef(ventureId);
-  if (!def) return [];
-  const owned = world.empire.owned[ventureId];
-  if (!owned) {
-    return [item(1, `Buy ${def.name} — $${def.cost}`, def.cost, () => buyVenture(world.empire, world.player, ventureId) >= 0)];
+  if (open.kind === 'crew') {
+    return CREW.filter((c) => !game.roster.hired[c.id]).map((c, i) => [
+      String(i + 1),
+      `Hire ${c.name} — ${c.effect}`,
+      c.cost,
+    ]);
   }
-  const cost = def.cost * owned.level;
-  return [item(1, `Upgrade ${def.name} to level ${owned.level + 1} — $${cost}`, cost, () => upgradeVenture(world.empire, world.player, ventureId) >= 0)];
+  if (open.kind === 'races') {
+    return RACES.map((r, i) => [String(i + 1), `${r.name} — $${r.prize} prize`, r.fee]);
+  }
+  if (open.kind === 'store') {
+    const items = [];
+    if (!game.player.weapons[1]) items.push(['1', 'Pistol', 400]);
+    if (!game.player.weapons[2]) items.push(['2', 'SMG', 900]);
+    if (!game.player.weapons[3]) items.push(['3', 'Shotgun', 1400]);
+    return items;
+  }
+  return [];
 }
 
-export function crewMenu(world) {
-  return ['milo', 'vera', 'tank'].map((id, i) => {
-    const def = mateDef(id);
-    const hired = !!world.roster.hired[id];
-    return item(i + 1, hired ? `${def.name} — hired` : `Hire ${def.name} — ${def.blurb}`, def.cost, () => hireMate(world.roster, world.player, id) >= 0);
-  });
+// Buy the menu item on a digit key. Returns true when a purchase landed.
+export function buyMenuItem(game, digit) {
+  const open = game.shopOpen;
+  if (!open) return false;
+  const items = menuItems(game);
+  const item = items.find(([key]) => key === digit);
+  if (!item) return false;
+  const price = item[2];
+  if (game.player.cash < price) return false;
+  game.player.cash -= price;
+
+  if (open.kind === 'garage') {
+    if (digit === '1') game.garage.engine += 1;
+    else if (digit === '2') game.garage.nitro += 1;
+    else if (digit === '3') game.garage.armor += 1;
+  } else if (open.kind === 'venture') {
+    const owned = game.empire.owned[open.shopId];
+    if (!owned) game.empire.owned[open.shopId] = { level: 1 };
+    else owned.level += 1;
+  } else if (open.kind === 'crew') {
+    const free = CREW.filter((c) => !game.roster.hired[c.id]);
+    const mate = free[Number(digit) - 1];
+    if (mate) game.roster.hired[mate.id] = { active: true };
+  } else if (open.kind === 'races') {
+    const race = RACES[Number(digit) - 1];
+    if (race) {
+      const gates = game.city.gateRoutes[race.id];
+      startRace(game.streetRaces, race, gates, game.time);
+    }
+  } else if (open.kind === 'store') {
+    game.player.weapons[Number(digit)] = true;
+  }
+  game.shopOpen = null;
+  return true;
 }
 
-export function raceMenu(world) {
-  return ['drag', 'sprint', 'circuit'].map((id, i) => {
-    const def = raceDef(id);
-    return item(i + 1, `${def.name} — entry $${def.fee}, prize $${def.prize}`, def.fee, () => startRace(world.streetRaces, world.player, id));
-  });
-}
-
-export function gunMenu(world) {
-  return WEAPONS.slice(1).map((w, i) => {
-    const owned = !!world.player.weapons[i + 1];
-    return item(i + 1, owned ? `${w.name} — owned` : `Buy ${w.name} — $${w.price}`, w.price, () => {
-      if (world.player.weapons[i + 1] || world.player.cash < w.price) return false;
-      world.player.cash = world.player.cash - w.price;
-      world.player.weapons[i + 1] = true;
-      return true;
-    });
-  });
-}
-
-export function foodMenu(world) {
-  return [item(1, 'Meal — heals 40', 30, () => {
-    if (world.player.cash < 30 || world.player.health >= 100) return false;
-    world.player.cash = world.player.cash - 30;
-    healPlayer(world.player, 40);
-    return true;
-  })];
+// Driving a car into the Chop Shop sells it on the spot.
+export function updateChopShop(game) {
+  if (!game.car || game.player.inCar === false) return;
+  const spot = game.city.spots.chopShop;
+  const dx = game.car.x - spot.x;
+  const dz = game.car.z - spot.z;
+  if (dx * dx + dz * dz > 10 * 10) return;
+  const car = game.car;
+  const value = 300 + (car.maxHealth - car.health);
+  game.player.cash += value;
+  game.cars = game.cars.filter((c) => c !== car);
+  game.car = null;
+  game.player.inCar = false;
+  game.player.x = spot.x + 3;
+  game.player.z = spot.z;
 }
