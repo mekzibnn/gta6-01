@@ -1,10 +1,21 @@
-// Solmar Heat v7 — the 3D view.
+// Solmar Heat v9 — the 3D view.
 // three.js r187, vendored offline. One renderer, one scene, one chase
 // camera. The city is built once; cars, peds, cops, the heli, the gates
 // and the fireballs are meshes that follow the world state every frame.
 // Lights are kept few on purpose — SwiftShader has to draw this too.
 
 import * as THREE from 'three';
+
+function flatMat(color, glow) {
+  return new THREE.MeshLambertMaterial({ color, emissive: glow || 0x000000 });
+}
+
+function flatPlane(w, d, mat, x, y, z) {
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(x, y, z);
+  return mesh;
+}
 
 export function initRenderer(canvas, city) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'low-power' });
@@ -43,53 +54,29 @@ export function initRenderer(canvas, city) {
   return state;
 }
 
-function lambert(color, emissive) {
-  return new THREE.MeshLambertMaterial({ color, emissive: emissive || 0x000000 });
-}
-
-function buildStatic(state) {
+function buildGround(state) {
   const { scene, city } = state;
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(city.half * 2 + 60, city.half * 2 + 60), lambert(0x3d5a3a));
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set(0, -0.05, 0);
+  const ground = flatPlane(city.half * 2 + 60, city.half * 2 + 60, flatMat(0x3d5a3a), 0, -0.05, 0);
   scene.add(ground);
   // Roads: one dark plane per avenue and per street, each with a pale
-  // center line so the grid reads as streets, not black slabs.
-  const roadMat = lambert(0x23282e);
+  // centre line so the grid reads as streets, not black slabs.
+  const roadMat = flatMat(0x23282e);
   const lineMat = new THREE.MeshBasicMaterial({ color: 0xd8c86a });
   for (let g = -180; g <= 180; g += 60) {
-    const v = new THREE.Mesh(new THREE.PlaneGeometry(14, city.half * 2), roadMat);
-    v.rotation.x = -Math.PI / 2;
-    v.position.set(g, 0, 0);
-    scene.add(v);
-    const h = new THREE.Mesh(new THREE.PlaneGeometry(city.half * 2, 14), roadMat);
-    h.rotation.x = -Math.PI / 2;
-    h.position.set(0, 0, g);
-    scene.add(h);
-    const vl = new THREE.Mesh(new THREE.PlaneGeometry(0.35, city.half * 2), lineMat);
-    vl.rotation.x = -Math.PI / 2;
-    vl.position.set(g, 0.02, 0);
-    scene.add(vl);
-    const hl = new THREE.Mesh(new THREE.PlaneGeometry(city.half * 2, 0.35), lineMat);
-    hl.rotation.x = -Math.PI / 2;
-    hl.position.set(0, 0.02, g);
-    scene.add(hl);
+    scene.add(flatPlane(14, city.half * 2, roadMat, g, 0, 0));
+    scene.add(flatPlane(city.half * 2, 14, roadMat, 0, 0, g));
+    scene.add(flatPlane(0.35, city.half * 2, lineMat, g, 0.02, 0));
+    scene.add(flatPlane(city.half * 2, 0.35, lineMat, 0, 0.02, g));
   }
   // Crosswalks at the four central intersections.
   const walkMat = new THREE.MeshBasicMaterial({ color: 0xe8e8e8 });
   for (const [cx, cz] of [[-60, -60], [60, -60], [-60, 60], [60, 60]]) {
     for (let i = -2; i <= 2; i += 1) {
-      const s = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 12), walkMat);
-      s.rotation.x = -Math.PI / 2;
-      s.position.set(cx + i * 2.4, 0.02, cz);
-      scene.add(s);
+      scene.add(flatPlane(1.1, 12, walkMat, cx + i * 2.4, 0.02, cz));
     }
   }
   // Beach: the Marina waterfront west of the city — sand, then water.
-  const sand = new THREE.Mesh(new THREE.PlaneGeometry(30, city.half * 2), lambert(0xe8d8a0));
-  sand.rotation.x = -Math.PI / 2;
-  sand.position.set(-195, 0.01, 0);
-  scene.add(sand);
+  scene.add(flatPlane(30, city.half * 2, flatMat(0xe8d8a0), -195, 0.01, 0));
   const water = new THREE.Mesh(
     new THREE.PlaneGeometry(45, city.half * 2 + 60),
     new THREE.MeshBasicMaterial({ color: 0x2e7fa8 }),
@@ -98,34 +85,44 @@ function buildStatic(state) {
   water.position.set(-232, 0.02, 0);
   scene.add(water);
   for (const u of city.umbrellas || []) {
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 2.6, 6), lambert(0x8a8a8a));
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 2.6, 6), flatMat(0x8a8a8a));
     pole.position.set(u.x, 1.3, u.z);
     scene.add(pole);
-    const top = new THREE.Mesh(new THREE.ConeGeometry(2.2, 1.1, 8), lambert(u.color));
+    const top = new THREE.Mesh(new THREE.ConeGeometry(2.2, 1.1, 8), flatMat(u.color));
     top.position.set(u.x, 2.9, u.z);
     scene.add(top);
   }
+}
+
+function buildCityBits(state) {
+  const { scene, city } = state;
   // Buildings: boxes in the sunset palette with a roof cap; downtown
   // towers go taller.
   for (const b of city.buildings) {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(b.w, b.h, b.d), lambert(b.color !== undefined ? b.color : new THREE.Color().setHSL(b.hue, 0.25, 0.42 + b.roof * 0.2).getHex()));
+    const tint = b.color !== undefined
+      ? b.color
+      : new THREE.Color().setHSL(b.hue, 0.25, 0.42 + b.roof * 0.2).getHex();
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(b.w, b.h, b.d), flatMat(tint));
     mesh.position.set(b.x, b.h / 2, b.z);
     mesh.userData.building = true;
     scene.add(mesh);
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(b.w * 0.7, 0.6, b.d * 0.7), lambert(b.roofColor !== undefined ? b.roofColor : 0x2a2f36));
+    const roof = new THREE.Mesh(
+      new THREE.BoxGeometry(b.w * 0.7, 0.6, b.d * 0.7),
+      flatMat(b.roofColor !== undefined ? b.roofColor : 0x2a2f36),
+    );
     roof.position.set(b.x, b.h + 0.3, b.z);
     scene.add(roof);
     b.mesh = mesh;
   }
   // Palms: a leaning trunk and five fronds, on the sidewalk corners.
   for (const palm of city.palms || []) {
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, palm.h, 6), lambert(0x8a6b4a));
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, palm.h, 6), flatMat(0x8a6b4a));
     trunk.position.set(palm.x, palm.h / 2, palm.z);
     trunk.rotation.z = palm.lean;
     scene.add(trunk);
     for (let f = 0; f < 5; f += 1) {
       const a = (f / 5) * Math.PI * 2;
-      const frond = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.08, 0.9), lambert(0x3f8a4f));
+      const frond = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.08, 0.9), flatMat(0x3f8a4f));
       frond.position.set(palm.x + Math.cos(a) * 1.4, palm.h + 0.2, palm.z + Math.sin(a) * 1.4);
       frond.rotation.y = -a;
       frond.rotation.z = 0.35;
@@ -134,7 +131,7 @@ function buildStatic(state) {
   }
   // Lamps: small glowing posts at the intersections.
   for (const lamp of city.lamps) {
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 5, 6), lambert(0x333333));
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 5, 6), flatMat(0x333333));
     post.position.set(lamp.x, 2.5, lamp.z);
     scene.add(post);
     const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffe9a8 }));
@@ -148,6 +145,10 @@ function buildStatic(state) {
     scene.add(light);
     state.lampLights.push(light);
   }
+}
+
+function buildSky(state) {
+  const { scene } = state;
   // Rain: a curtain of short lines around the camera.
   const count = 240;
   const positions = new Float32Array(count * 6);
@@ -165,15 +166,15 @@ function buildStatic(state) {
   state.rain = rain;
   // Air One: body, tail, rotor, and a spotlight cone underneath.
   const heli = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(4.4, 1.6, 2), lambert(0x1a1a1a));
+  const body = new THREE.Mesh(new THREE.BoxGeometry(4.4, 1.6, 2), flatMat(0x1a1a1a));
   heli.add(body);
   const stripe = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.35, 2.05), new THREE.MeshBasicMaterial({ color: 0xffffff }));
   stripe.position.set(0, 0.3, 0);
   heli.add(stripe);
-  const tail = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.5, 0.5), lambert(0x1a1a1a));
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.5, 0.5), flatMat(0x1a1a1a));
   tail.position.set(-3.6, 0.3, 0);
   heli.add(tail);
-  const rotor = new THREE.Mesh(new THREE.BoxGeometry(7.5, 0.08, 0.4), lambert(0x444444));
+  const rotor = new THREE.Mesh(new THREE.BoxGeometry(7.5, 0.08, 0.4), flatMat(0x444444));
   rotor.position.set(0, 1.1, 0);
   heli.add(rotor);
   heli.userData.rotor = rotor;
@@ -218,6 +219,12 @@ function buildStatic(state) {
   state.built = true;
 }
 
+function buildStatic(state) {
+  buildGround(state);
+  buildCityBits(state);
+  buildSky(state);
+}
+
 export function makeGateMeshes(state, city) {
   const out = {};
   for (const raceId of Object.keys(city.gateRoutes)) {
@@ -254,33 +261,34 @@ export function makeVentureMarkers(state, city) {
 
 function carGroup(car) {
   const group = new THREE.Group();
-  const def = { len: car.model === 'truck' ? 6.2 : car.model === 'ram' ? 5.2 : 4.4, wid: car.model === 'truck' ? 2.4 : 2 };
-  const body = new THREE.Mesh(new THREE.BoxGeometry(def.len, 0.75, def.wid), lambert(car.color || 0x888888));
+  const len = car.model === 'truck' ? 6.2 : car.model === 'ram' ? 5.2 : 4.4;
+  const wid = car.model === 'truck' ? 2.4 : 2;
+  const body = new THREE.Mesh(new THREE.BoxGeometry(len, 0.75, wid), flatMat(car.color || 0x888888));
   body.position.y = 0.55;
   group.add(body);
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(def.len * 0.45, 0.6, def.wid * 0.85), lambert(0x1c2733));
-  cabin.position.set(-def.len * 0.05, 1.2, 0);
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(len * 0.45, 0.6, wid * 0.85), flatMat(0x1c2733));
+  cabin.position.set(-len * 0.05, 1.2, 0);
   group.add(cabin);
   const wheelGeo = new THREE.BoxGeometry(0.7, 0.7, 0.35);
-  const wheelMat = lambert(0x111111);
-  for (const [wx, wz] of [[def.len * 0.32, def.wid / 2], [def.len * 0.32, -def.wid / 2], [-def.len * 0.32, def.wid / 2], [-def.len * 0.32, -def.wid / 2]]) {
+  const wheelMat = flatMat(0x111111);
+  for (const [wx, wz] of [[len * 0.32, wid / 2], [len * 0.32, -wid / 2], [-len * 0.32, wid / 2], [-len * 0.32, -wid / 2]]) {
     const wheel = new THREE.Mesh(wheelGeo, wheelMat);
     wheel.position.set(wx, 0.35, wz);
     group.add(wheel);
   }
   const lightMat = new THREE.MeshBasicMaterial({ color: 0xfff6c8 });
-  for (const wz of [def.wid / 2 - 0.35, -def.wid / 2 + 0.35]) {
+  for (const wz of [wid / 2 - 0.35, -wid / 2 + 0.35]) {
     const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.25, 0.5), lightMat);
-    lamp.position.set(def.len / 2 + 0.02, 0.6, wz);
+    lamp.position.set(len / 2 + 0.02, 0.6, wz);
     group.add(lamp);
   }
   // Sport cars get a rear spoiler and a roof stripe — the player's ride
   // should read as tuned, not a grey box.
   if (car.model === 'sport') {
-    const spoiler = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.5, def.wid * 0.95), lambert(0x1a1a1a));
-    spoiler.position.set(-def.len / 2 - 0.1, 1.35, 0);
+    const spoiler = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.5, wid * 0.95), flatMat(0x1a1a1a));
+    spoiler.position.set(-len / 2 - 0.1, 1.35, 0);
     group.add(spoiler);
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(def.len * 0.5, 0.06, 0.5), lambert(0x1a1a1a));
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(len * 0.5, 0.06, 0.5), flatMat(0x1a1a1a));
     stripe.position.set(0, 1.53, 0);
     group.add(stripe);
   }
@@ -290,20 +298,20 @@ function carGroup(car) {
     group.add(bar);
     group.userData.bar = bar;
     if (car.model === 'ram') {
-      const bull = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.9, def.wid + 0.3), lambert(0x222222));
-      bull.position.set(def.len / 2 + 0.25, 0.55, 0);
+      const bull = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.9, wid + 0.3), flatMat(0x222222));
+      bull.position.set(len / 2 + 0.25, 0.55, 0);
       group.add(bull);
     }
     if (car.model === 'pit') {
-      const spoiler = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.12, def.wid * 0.9), lambert(0x111111));
-      spoiler.position.set(-def.len / 2 - 0.2, 1.05, 0);
+      const spoiler = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.12, wid * 0.9), flatMat(0x111111));
+      spoiler.position.set(-len / 2 - 0.2, 1.05, 0);
       group.add(spoiler);
     }
   }
   return group;
 }
 
-function syncCarMesh(state, car, dt, time) {
+function syncCarMesh(state, car, time) {
   let group = state.carMeshes.get(car.id);
   if (!group) {
     group = carGroup(car);
@@ -313,19 +321,20 @@ function syncCarMesh(state, car, dt, time) {
   group.position.set(car.x, 0, car.z);
   group.rotation.y = -car.heading;
   if (group.userData.bar) {
-    group.userData.bar.material.color.setHex(Math.floor(time * 4) % 2 === 0 ? 0xff2222 : 0x2244ff);
+    const red = Math.floor(time * 4) % 2 === 0;
+    group.userData.bar.material.color.setHex(red ? 0xff2222 : 0x2244ff);
   }
   return group;
 }
 
-function syncPedMesh(state, ped, index) {
+function syncPedMesh(state, ped) {
   let mesh = state.pedMeshes.get(ped);
   if (!mesh) {
     const group = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.1, 0.35), lambert(ped.color || 0x888888));
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.1, 0.35), flatMat(ped.color || 0x888888));
     body.position.y = 0.85;
     group.add(body);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 6), lambert(0xd9a066));
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 6), flatMat(0xd9a066));
     head.position.y = 1.65;
     group.add(head);
     state.scene.add(group);
@@ -367,10 +376,10 @@ function syncWreckMesh(state, wreck, time) {
   let entry = state.wreckMeshes.get(wreck);
   if (!entry) {
     const group = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.7, 2), lambert(0x1e1e1e));
+    const body = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.7, 2), flatMat(0x1e1e1e));
     body.position.y = 0.5;
     group.add(body);
-    const cabin = new THREE.Mesh(new THREE.BoxGeometry(2, 0.55, 1.7), lambert(0x141414));
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(2, 0.55, 1.7), flatMat(0x141414));
     cabin.position.y = 1.1;
     group.add(cabin);
     const flame = new THREE.Mesh(
@@ -398,19 +407,25 @@ function syncWreckMesh(state, wreck, time) {
   return entry;
 }
 
+function skyFor(clock) {
+  if (clock.isNight) return { bg: 0x0d1b26, sun: 0x8fa8ff, sunI: 0.25, amb: 0.32 };
+  if (clock.golden) return { bg: 0xe8965a, sun: 0xff9a3c, sunI: 1.0, amb: 0.75 };
+  return { bg: 0x87b5d6, sun: 0xfff2d8, sunI: 1.4, amb: 0.75 };
+}
+
 export function renderFrame(state, world, dt) {
   const { scene, camera } = state;
   const time = world.time;
   const clock = world.clock;
   const hour = clock.hour;
   // Sun and sky follow the clock: golden hour dips low and orange.
-  const dayF = clock.isNight ? 0 : clock.golden ? 0.45 : 1;
+  const sky = skyFor(clock);
   const sunAngle = ((hour - 6) / 12) * Math.PI;
   state.sun.position.set(Math.cos(sunAngle) * 120, Math.max(12, Math.sin(sunAngle) * 130), 50);
-  state.sun.intensity = clock.isNight ? 0.25 : clock.golden ? 1.0 : 1.4;
-  state.sun.color.setHex(clock.golden ? 0xff9a3c : clock.isNight ? 0x8fa8ff : 0xfff2d8);
-  state.ambient.intensity = clock.isNight ? 0.32 : 0.75;
-  scene.background.setHex(clock.isNight ? 0x0d1b26 : clock.golden ? 0xe8965a : 0x87b5d6);
+  state.sun.intensity = sky.sunI;
+  state.sun.color.setHex(sky.sun);
+  state.ambient.intensity = sky.amb;
+  scene.background.setHex(sky.bg);
   scene.fog.color.copy(scene.background);
   for (const b of state.city.buildings) {
     if (b.mesh) b.mesh.material.emissive.setHex(clock.isNight ? 0x2a1f0a : 0x000000);
@@ -428,7 +443,7 @@ export function renderFrame(state, world, dt) {
   // the opacity is set on it, not on the groups.
   state.cloudMat.opacity = clock.isNight ? 0.25 : clock.golden ? 0.95 : 0.85;
   for (const cloud of state.clouds) {
-    cloud.position.x += dt * 1.2;
+    cloud.position.x = cloud.position.x + dt * 1.2;
     if (cloud.position.x > 340) cloud.position.x = -340;
   }
   const disc = state.sunDisc;
@@ -438,10 +453,10 @@ export function renderFrame(state, world, dt) {
     } else {
       // The sun hangs in the sky ahead of the camera (a skybox sun): it is
       // always in frame at golden hour, low on the horizon, higher at noon.
-      // Golden-hour height 120 (not 95): at 95 the disc sat half behind the
-      // centered mission banner (banner top y=96, disc radius ~43 px), so
-      // only a half-disc showed on the cover. At 120 the full disc clears
-      // the banner and sits in open sky above it.
+      // Golden-hour height 120: at 95 the disc sat half behind the centred
+      // mission banner (banner top y=96, disc radius ~43 px), so only a
+      // half-disc showed on the cover. At 120 the full disc clears the
+      // banner and sits in open sky above it.
       disc.visible = true;
       const viewDir = new THREE.Vector3();
       camera.getWorldDirection(viewDir);
@@ -461,8 +476,8 @@ export function renderFrame(state, world, dt) {
       state.carMeshes.delete(id);
     }
   }
-  for (const car of world.cars || []) syncCarMesh(state, car, dt, time);
-  for (const cop of world.cops || []) syncCarMesh(state, cop, dt, time);
+  for (const car of world.cars || []) syncCarMesh(state, car, time);
+  for (const cop of world.cops || []) syncCarMesh(state, cop, time);
   // Peds (prune meshes for mates who left the crew).
   const livePeds = new Set(world.peds || []);
   for (const mate of world.mates || []) livePeds.add(mate);
@@ -497,7 +512,7 @@ export function renderFrame(state, world, dt) {
   for (const marker of state.markers) {
     marker.mesh.position.y = marker.baseY + Math.sin(time * 2 + marker.baseY) * 0.6;
     marker.mesh.material.color.setHex(world.empire.owned[marker.id] ? 0xffd23f : 0x7cfc9a);
-    marker.mesh.rotation.y += dt * 0.8;
+    marker.mesh.rotation.y = marker.mesh.rotation.y + dt * 0.8;
   }
   // Explosions and wrecks.
   for (const boom of world.booms || []) syncBoomMesh(state, boom);
@@ -532,7 +547,7 @@ export function renderFrame(state, world, dt) {
     const hz = world.player.z + Math.cos(time * 0.4) * 26;
     heli.position.set(hx, 30, hz);
     heli.rotation.y = -Math.atan2(world.player.x - hx, world.player.z - hz);
-    heli.userData.rotor.rotation.y += dt * 22;
+    heli.userData.rotor.rotation.y = heli.userData.rotor.rotation.y + dt * 22;
     heli.userData.spot.intensity = 30;
   } else {
     heli.visible = false;
@@ -548,9 +563,9 @@ export function renderFrame(state, world, dt) {
     const wantX = focus.x - fx * 15;
     const wantZ = focus.z - fz * 15;
     const wantY = 8.5;
-    state.camPos.x += (wantX - state.camPos.x) * Math.min(1, dt * 4);
-    state.camPos.y += (wantY - state.camPos.y) * Math.min(1, dt * 4);
-    state.camPos.z += (wantZ - state.camPos.z) * Math.min(1, dt * 4);
+    state.camPos.x = state.camPos.x + (wantX - state.camPos.x) * Math.min(1, dt * 4);
+    state.camPos.y = state.camPos.y + (wantY - state.camPos.y) * Math.min(1, dt * 4);
+    state.camPos.z = state.camPos.z + (wantZ - state.camPos.z) * Math.min(1, dt * 4);
     const shake = world.shake || 0;
     const sx = shake > 0 ? (Math.random() - 0.5) * shake : 0;
     const sy = shake > 0 ? (Math.random() - 0.5) * shake * 0.6 : 0;

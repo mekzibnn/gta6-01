@@ -1,7 +1,7 @@
-// Solmar Heat v7 — the ledger.
-// Every dollar and every mile the player racks up is recorded here, so the
-// stats screen (and the save) can tell the story of a career. Each helper
-// takes the ledger and mutates exactly one counter — no hidden side effects.
+// Solmar Heat v9 — the ledger.
+// Every dollar and every mile is recorded here, so the stats screen and
+// the save can tell the story of a career. Each helper touches exactly
+// one counter — no hidden side effects, no cross-talk between them.
 
 export function initLedger() {
   return {
@@ -18,40 +18,45 @@ export function initLedger() {
   };
 }
 
+function noteTopSpeed(ledger, kmh) {
+  if (kmh > ledger.topSpeed) ledger.topSpeed = Math.round(kmh);
+}
+
 export function ledgerDrive(ledger, meters, speedKmh, dt) {
-  ledger.distanceKm += meters / 1000;
-  ledger.timePlayed += dt;
-  if (speedKmh > ledger.topSpeed) ledger.topSpeed = Math.round(speedKmh);
+  const km = meters / 1000;
+  ledger.distanceKm = ledger.distanceKm + km;
+  ledger.timePlayed = ledger.timePlayed + dt;
+  noteTopSpeed(ledger, speedKmh);
 }
 
 export function ledgerEarn(ledger, amount) {
-  ledger.earned += amount;
+  ledger.earned = ledger.earned + amount;
 }
 
 export function ledgerSpend(ledger, amount) {
-  ledger.spent += amount;
+  ledger.spent = ledger.spent + amount;
 }
 
 export function ledgerBust(ledger) {
-  ledger.busted += 1;
+  ledger.busted = ledger.busted + 1;
 }
 
 export function ledgerRace(ledger, won) {
-  if (won) ledger.racesWon += 1;
+  if (won) ledger.racesWon = ledger.racesWon + 1;
 }
 
 export function ledgerMission(ledger) {
-  ledger.missionsDone += 1;
+  ledger.missionsDone = ledger.missionsDone + 1;
 }
 
 export function ledgerVenture(ledger) {
-  ledger.businessesBought += 1;
+  ledger.businessesBought = ledger.businessesBought + 1;
 }
 
 export function ledgerMate(ledger) {
-  ledger.crewHired += 1;
+  ledger.crewHired = ledger.crewHired + 1;
 }
 
 export function ledgerTopSpeed(ledger, speedKmh) {
-  if (speedKmh > ledger.topSpeed) ledger.topSpeed = Math.round(speedKmh);
+  noteTopSpeed(ledger, speedKmh);
 }

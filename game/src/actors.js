@@ -1,4 +1,4 @@
-// Solmar Heat v7 — people.
+// Solmar Heat v9 — people.
 // Everyone on foot and everyone behind a wheel lives here: the player,
 // the walkers on the sidewalks, the cops (patrol, RAM and PIT), and the
 // hired mates who watch Leo's back. Combat is simple and close-range:
@@ -53,14 +53,21 @@ export function spawnMate(id, x, z) {
   return { id, x, z, heading: 0, speed: 0, state: 'follow', punchAt: 0, color: colors[id] || 0x888888 };
 }
 
+function blockedByBuilding(world, x, z, pad) {
+  for (const b of world.city.buildings) {
+    if (Math.abs(x - b.x) < b.w / 2 + pad && Math.abs(z - b.z) < b.d / 2 + pad) return true;
+  }
+  return false;
+}
+
 export function movePlayer(player, input, dt, world) {
   const run = input.run ? 11 : 6;
   let mx = 0;
   let mz = 0;
-  if (input.up) mz += 1;
-  if (input.down) mz -= 1;
-  if (input.left) mx -= 1;
-  if (input.right) mx += 1;
+  if (input.up) mz = mz + 1;
+  if (input.down) mz = mz - 1;
+  if (input.left) mx = mx - 1;
+  if (input.right) mx = mx + 1;
   if (mx === 0 && mz === 0) {
     player.speed = 0;
     return 0;
@@ -69,20 +76,16 @@ export function movePlayer(player, input, dt, world) {
   const step = run * dt;
   const nx = player.x + (mx / len) * step;
   const nz = player.z + (mz / len) * step;
-  let blocked = false;
-  for (const b of world.city.buildings) {
-    if (Math.abs(nx - b.x) < b.w / 2 + 0.6 && Math.abs(nz - b.z) < b.d / 2 + 0.6) { blocked = true; break; }
+  if (blockedByBuilding(world, nx, nz, 0.6)) {
+    player.speed = 0;
+    return 0;
   }
-  if (!blocked) {
-    const half = world.city.half;
-    player.x = Math.max(-half, Math.min(half, nx));
-    player.z = Math.max(-half, Math.min(half, nz));
-    player.heading = Math.atan2(mx / len, mz / len);
-    player.speed = run;
-    return step;
-  }
-  player.speed = 0;
-  return 0;
+  const half = world.city.half;
+  player.x = Math.max(-half, Math.min(half, nx));
+  player.z = Math.max(-half, Math.min(half, nz));
+  player.heading = Math.atan2(mx / len, mz / len);
+  player.speed = run;
+  return step;
 }
 
 export function advanceWalker(walker, dt, world) {
@@ -92,8 +95,8 @@ export function advanceWalker(walker, dt, world) {
     const dx = walker.x - world.player.x;
     const dz = walker.z - world.player.z;
     const d = Math.sqrt(dx * dx + dz * dz) || 1;
-    walker.x += (dx / d) * 9 * dt;
-    walker.z += (dz / d) * 9 * dt;
+    walker.x = walker.x + (dx / d) * 9 * dt;
+    walker.z = walker.z + (dz / d) * 9 * dt;
     walker.heading = Math.atan2(dx / d, dz / d);
     return;
   }
@@ -103,13 +106,20 @@ export function advanceWalker(walker, dt, world) {
   const dz = target.z - walker.z;
   const dist = Math.sqrt(dx * dx + dz * dz);
   if (dist < 1.5) {
-    walker.routeAt += 1;
+    walker.routeAt = walker.routeAt + 1;
     return;
   }
-  walker.x += (dx / dist) * 2.2 * dt;
-  walker.z += (dz / dist) * 2.2 * dt;
+  walker.x = walker.x + (dx / dist) * 2.2 * dt;
+  walker.z = walker.z + (dz / dist) * 2.2 * dt;
   walker.heading = Math.atan2(dx / dist, dz / dist);
   walker.speed = 2.2;
+}
+
+function turnToward(heading, want, maxTurn) {
+  let diff = want - heading;
+  while (diff > Math.PI) diff = diff - Math.PI * 2;
+  while (diff < -Math.PI) diff = diff + Math.PI * 2;
+  return heading + Math.max(-maxTurn, Math.min(maxTurn, diff));
 }
 
 export function advanceCop(cop, world, dt) {
@@ -127,7 +137,7 @@ export function advanceCop(cop, world, dt) {
     aimZ = tz + Math.cos(target.heading || 0) * (target.speed || 0) * lead;
   } else if (cop.kind === 'pit') {
     cruise = POLICE.pitSpeed;
-    cop.pitTimer += dt;
+    cop.pitTimer = cop.pitTimer + dt;
     if (cop.pitTimer > 4) {
       cop.pitTimer = 0;
       cop.pitSide = -cop.pitSide;
@@ -143,18 +153,14 @@ export function advanceCop(cop, world, dt) {
   const dz = aimZ - cop.z;
   const dist = Math.sqrt(dx * dx + dz * dz);
   if (dist > 1) {
-    const want = Math.atan2(dx, dz);
-    let diff = want - cop.heading;
-    while (diff > Math.PI) diff -= Math.PI * 2;
-    while (diff < -Math.PI) diff += Math.PI * 2;
-    cop.heading += Math.max(-2.4 * dt, Math.min(2.4 * dt, diff));
+    cop.heading = turnToward(cop.heading, Math.atan2(dx, dz), 2.4 * dt);
   }
-  cop.speed += (cruise - cop.speed) * Math.min(1, dt * 0.7);
-  cop.x += Math.sin(cop.heading) * cop.speed * dt;
-  cop.z += Math.cos(cop.heading) * cop.speed * dt;
+  cop.speed = cop.speed + (cruise - cop.speed) * Math.min(1, dt * 0.7);
+  cop.x = cop.x + Math.sin(cop.heading) * cop.speed * dt;
+  cop.z = cop.z + Math.cos(cop.heading) * cop.speed * dt;
   const half = world.city.half;
   if (Math.abs(cop.x) > half || Math.abs(cop.z) > half) {
-    cop.heading += Math.PI;
+    cop.heading = cop.heading + Math.PI;
     cop.x = Math.max(-half, Math.min(half, cop.x));
     cop.z = Math.max(-half, Math.min(half, cop.z));
   }
@@ -162,13 +168,13 @@ export function advanceCop(cop, world, dt) {
   if (world.car && carDistance(cop, world.car) < 3.4) {
     if (cop.kind === 'ram') {
       damageCar(world.car, POLICE.ramDamage * dt * 2, world);
-      world.car.speed *= 0.85;
+      world.car.speed = world.car.speed * 0.85;
     } else if (cop.kind === 'pit') {
-      world.car.heading += POLICE.pitSpin * dt * cop.pitSide;
-      world.car.speed *= 0.92;
+      world.car.heading = world.car.heading + POLICE.pitSpin * dt * cop.pitSide;
+      world.car.speed = world.car.speed * 0.92;
       damageCar(world.car, 6 * dt, world);
     } else {
-      world.car.speed *= 0.94;
+      world.car.speed = world.car.speed * 0.94;
     }
   }
 }
@@ -191,14 +197,14 @@ export function advanceMate(mate, world, dt) {
   const dz = player.z - mate.z;
   const dist = Math.sqrt(dx * dx + dz * dz);
   if (dist > 5) {
-    mate.x += (dx / dist) * 8 * dt;
-    mate.z += (dz / dist) * 8 * dt;
+    mate.x = mate.x + (dx / dist) * 8 * dt;
+    mate.z = mate.z + (dz / dist) * 8 * dt;
     mate.heading = Math.atan2(dx / dist, dz / dist);
     mate.speed = 8;
   } else {
     mate.speed = 0;
   }
-  mate.punchAt -= dt;
+  mate.punchAt = mate.punchAt - dt;
   if (mate.punchAt <= 0) {
     matePunch(mate, world);
     mate.punchAt = 0.8;

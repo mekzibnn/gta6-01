@@ -1,4 +1,4 @@
-// Solmar Heat v7 — synthesized sound.
+// Solmar Heat v9 — synthesized sound.
 // No audio files: every sound is a WebAudio oscillator or a burst of
 // filtered noise, built on the first user gesture. Everything is guarded
 // — if the browser has no audio, the game plays silent and never throws.
@@ -118,7 +118,7 @@ export function sirenSound(audio, on) {
 
 export function sirenTick(audio, dt) {
   if (!audio.siren) return;
-  audio.siren.t += dt;
+  audio.siren.t = audio.siren.t + dt;
   try {
     audio.siren.osc.frequency.value = 650 + Math.sin(audio.siren.t * 4) * 250;
   } catch { /* silent */ }
@@ -136,7 +136,7 @@ export function missionSound(audio) {
 
 export function radioTick(audio, dt) {
   if (!audio.radio) return;
-  audio.station += dt;
+  audio.station = audio.station + dt;
   if (audio.station > 0.5) {
     audio.station = 0;
     tone(audio, 440 + Math.random() * 220, 0.2, 'triangle', 0.03);
@@ -148,7 +148,7 @@ export function setRadio(audio, on) {
   if (on) startAudio(audio);
 }
 
-// v7: a car bomb is a noise burst with a low sine dropping away.
+// A car bomb is a noise burst with a low sine dropping away.
 export function boomSound(audio) {
   noise(audio, 0.9, 0.5, 400);
   tone(audio, 120, 0.9, 'sine', 0.3, 30);

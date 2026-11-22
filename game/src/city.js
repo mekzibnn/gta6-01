@@ -1,4 +1,4 @@
-// Solmar Heat v7 — the city.
+// Solmar Heat v9 — the city.
 // Solmar is a grid: avenues run north-south, streets east-west, a block
 // between every pair. The layout is fixed (so missions and tests always
 // find the same corners), while the buildings inside the blocks are dealt
@@ -55,7 +55,23 @@ export function gateChain(city, raceId) {
   return city.gateRoutes[raceId] || [];
 }
 
-function nearSpot(x, z, margin) {
+// The buildings are no longer one blue-grey wash — a sunset palette
+// (terracotta, sand, cream, coral, teal, dusty rose, steel blue) is dealt
+// per building, so the skyline reads as a beachfront city, not a prototype.
+const PALETTE = [0xe8a87c, 0xf2d8a7, 0xe8e8e8, 0xd96c5f, 0x7fb3b0, 0xc9a0c9, 0x5a7a9a, 0xf2c200, 0xa67c52, 0x8a94a6];
+const ROOFS = [0x2a2f36, 0x8a5a3a, 0x4a6b5a, 0x7a3a3a];
+
+// A tiny linear generator, just for the city deal — kept separate from
+// the game's dice so the skyline does not shift when gameplay rolls.
+function cityDice(seed) {
+  let s = (seed >>> 0) || 1;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+function spotTooClose(x, z, margin) {
   for (const key of Object.keys(SPOTS)) {
     const s = SPOTS[key];
     const dx = s.x - x;
@@ -65,33 +81,23 @@ function nearSpot(x, z, margin) {
   return false;
 }
 
-// v8: the buildings are no longer one blue-grey wash — a sunset palette
-// (terracotta, sand, cream, coral, teal, dusty rose, steel blue) is dealt
-// per building, so the skyline reads as a beachfront city, not a prototype.
-const PALETTE = [0xe8a87c, 0xf2d8a7, 0xe8e8e8, 0xd96c5f, 0x7fb3b0, 0xc9a0c9, 0x5a7a9a, 0xf2c200, 0xa67c52, 0x8a94a6];
-const ROOFS = [0x2a2f36, 0x8a5a3a, 0x4a6b5a, 0x7a3a3a];
-
 export function initCity(seed) {
-  let state = (seed >>> 0) || 1;
-  const rnd = () => {
-    state = (state * 1664525 + 1013904223) >>> 0;
-    return state / 4294967296;
-  };
+  const rnd = cityDice(seed);
   const buildings = [];
   const lamps = [];
   const palms = [];
   // One or two buildings per block, kept clear of the named spots.
   for (let bx = -150; bx <= 150; bx += 60) {
     for (let bz = -150; bz <= 150; bz += 60) {
-      if (nearSpot(bx, bz, 20)) continue;
-      const tall = Math.abs(bx) <= 60 && Math.abs(bz) <= 60;
+      if (spotTooClose(bx, bz, 20)) continue;
+      const downtown = Math.abs(bx) <= 60 && Math.abs(bz) <= 60;
       const count = rnd() < 0.45 ? 2 : 1;
       for (let i = 0; i < count; i += 1) {
         const ox = count === 1 ? 0 : (i === 0 ? -11 : 11);
         const oz = count === 1 ? 0 : (i === 0 ? -11 : 11);
         const w = 16 + rnd() * 10;
         const d = 16 + rnd() * 10;
-        const h = tall ? 26 + rnd() * 34 : 8 + rnd() * 16;
+        const h = downtown ? 26 + rnd() * 34 : 8 + rnd() * 16;
         buildings.push({
           x: bx + ox, z: bz + oz, w, d, h,
           hue: 0.55 + rnd() * 0.15,

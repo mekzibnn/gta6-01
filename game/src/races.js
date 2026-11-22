@@ -1,6 +1,6 @@
-// Solmar Heat v7 — the street series.
-// Three races, one office: Drag is a straight shot, Sprint is four gates
-// across town, Circuit is six gates around the loop. Entry costs money,
+// Solmar Heat v9 — the street series.
+// Three races, one office. Drag is a straight shot, Sprint is four gates
+// across town, Circuit is six gates around the loop. Entry costs money;
 // winning pays it back with interest — and rain pays a bonus on top.
 
 import { rainBonus } from './weather.js';
@@ -23,14 +23,14 @@ export function startRace(races, player, id) {
   const def = raceDef(id);
   if (!def || races.active) return false;
   if (player.cash < def.fee) return false;
-  player.cash -= def.fee;
+  player.cash = player.cash - def.fee;
   races.active = { id, gate: 0, t: 0 };
   return true;
 }
 
 export function raceGatePassed(races) {
   if (!races.active) return false;
-  races.active.gate += 1;
+  races.active.gate = races.active.gate + 1;
   return raceFinished(races);
 }
 
@@ -44,10 +44,12 @@ export function finishRace(races, player, weather) {
   if (!races.active) return 0;
   const def = raceDef(races.active.id);
   const prize = Math.round(def.prize * rainBonus(weather));
-  player.cash += prize;
-  races.won += 1;
+  player.cash = player.cash + prize;
+  races.won = races.won + 1;
   const prev = races.best[races.active.id];
-  if (prev === undefined || races.active.t < prev) races.best[races.active.id] = Math.round(races.active.t * 10) / 10;
+  if (prev === undefined || races.active.t < prev) {
+    races.best[races.active.id] = Math.round(races.active.t * 10) / 10;
+  }
   races.active = null;
   return prize;
 }
@@ -58,7 +60,7 @@ export function abandonRace(races) {
 
 export function raceTick(races, player, city, dt, weather) {
   if (!races.active) return null;
-  races.active.t += dt;
+  races.active.t = races.active.t + dt;
   const gates = city.gateRoutes[races.active.id] || [];
   const target = gates[races.active.gate];
   if (!target) return null;

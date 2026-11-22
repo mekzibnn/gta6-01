@@ -1,9 +1,9 @@
-// Solmar Heat v7 — the story.
-// Twelve jobs, from a first stolen car to owning half the city. Each
-// mission is a list of steps; a step is a condition the world has to meet
-// (reach a place, hold a wanted level, own a business, win a race).
-// tickMission watches the current step and reports back when it clears —
-// main.js turns those reports into banners, cash, and district standing.
+// Solmar Heat v9 — the story.
+// Twelve jobs, from a first stolen car to owning half the city. Every
+// mission is a list of steps; a step is a condition the world has to
+// meet — reach a place, hold a wanted level, own a business, win a race.
+// tickMission watches the current step and reports back when it clears;
+// main.js turns those reports into banners, cash and district standing.
 
 export const MISSIONS = [
   {
@@ -126,11 +126,9 @@ export function startMission(missions, index) {
   missions.lastIndex = index;
 }
 
-function spotOf(world, key) {
-  return world.city.spots[key] || { x: 0, z: 0 };
-}
-
-function near(world, spot, radius) {
+// Is the player close enough to a named spot (within the given radius)?
+function atSpot(world, key, radius) {
+  const spot = world.city.spots[key] || { x: 0, z: 0 };
   const dx = world.player.x - spot.x;
   const dz = world.player.z - spot.z;
   return dx * dx + dz * dz < radius * radius;
@@ -139,54 +137,51 @@ function near(world, spot, radius) {
 export function stepMet(step, world, missions) {
   if (!step) return false;
   const player = world.player;
-  switch (step.kind) {
-    case 'reach':
-    case 'drop': {
-      if (step.inCar && !player.inCar) return false;
-      if (step.night && !world.clock.isNight) return false;
-      return near(world, spotOf(world, step.spot), 12);
-    }
-    case 'steal':
-      return player.inCar === true;
-    case 'wanted':
-      return step.min === 0 ? player.wanted === 0 : player.wanted >= step.min;
-    case 'survive':
-      return missions.stepT >= step.seconds;
-    case 'own':
-      return Object.keys(world.empire.owned).length > 0;
-    case 'hire':
-      return Object.keys(world.roster.hired).length > 0;
-    case 'race':
-      return world.streetRaces.won > 0;
-    case 'sell':
-      return world.soldCar === true;
-    case 'gates':
-      return world.gatesPassed - (missions.gateBase || 0) >= step.count;
-    default:
-      return false;
+  if (step.kind === 'reach' || step.kind === 'drop') {
+    if (step.inCar && !player.inCar) return false;
+    if (step.night && !world.clock.isNight) return false;
+    return atSpot(world, step.spot, 12);
+  }
+  if (step.kind === 'steal') return player.inCar === true;
+  if (step.kind === 'wanted') {
+    return step.min === 0 ? player.wanted === 0 : player.wanted >= step.min;
+  }
+  if (step.kind === 'survive') return missions.stepT >= step.seconds;
+  if (step.kind === 'own') return Object.keys(world.empire.owned).length > 0;
+  if (step.kind === 'hire') return Object.keys(world.roster.hired).length > 0;
+  if (step.kind === 'race') return world.streetRaces.won > 0;
+  if (step.kind === 'sell') return world.soldCar === true;
+  if (step.kind === 'gates') {
+    const base = missions.gateBase || 0;
+    return world.gatesPassed - base >= step.count;
+  }
+  return false;
+}
+
+function payStep(step, world) {
+  if (step.pay) {
+    world.player.cash = world.player.cash + step.pay;
+    (world.sfx || (world.sfx = [])).push('cash');
+  }
+  if (step.heat) {
+    world.player.wanted = Math.min(5, world.player.wanted + step.heat);
   }
 }
 
 export function stepDone(missions, world) {
   const step = currentStep(missions);
-  if (step && step.pay) {
-    world.player.cash += step.pay;
-    (world.sfx || (world.sfx = [])).push('cash');
-  }
-  if (step && step.heat) {
-    world.player.wanted = Math.min(5, world.player.wanted + step.heat);
-  }
-  missions.step += 1;
+  if (step) payStep(step, world);
+  missions.step = missions.step + 1;
   missions.stepT = 0;
 }
 
 export function completeMission(missions, world) {
   const m = currentMission(missions);
   if (!m) return 0;
-  world.player.cash += m.reward;
-  world.player.respect += 25;
+  world.player.cash = world.player.cash + m.reward;
+  world.player.respect = world.player.respect + 25;
   missions.done.push(m.id);
-  missions.index += 1;
+  missions.index = missions.index + 1;
   missions.step = 0;
   missions.stepT = 0;
   missions.gateBase = world.gatesPassed || 0;
@@ -204,7 +199,7 @@ export function tickMission(missions, world, dt) {
   const step = currentStep(missions);
   if (!step) return null;
   if (step.kind === 'survive') {
-    if (world.player.wanted >= step.min) missions.stepT += dt;
+    if (world.player.wanted >= step.min) missions.stepT = missions.stepT + dt;
     else missions.stepT = 0;
   }
   if (!stepMet(step, world, missions)) return null;

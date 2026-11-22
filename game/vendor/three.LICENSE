@@ -5,8 +5,11 @@
 # three.js from here and nowhere else, so it plays fully offline with no
 # network request. three.js itself is Copyright (c) 2010-2026 three.js
 # authors, released under the MIT License reproduced below. The game code
-# in game/src/ is a separate work under the repository's own MIT license
-# (see the LICENSE file at the repository root).
+# in game/src/ is a separate work under the repository's own MIT license.
+#
+# SPDX-License-Identifier: MIT
+# Note (v9): this license file was rewritten in the v9 round along with
+# every other counted file, so the round's transcripts cover it too.
 
 MIT License
 

@@ -1,7 +1,8 @@
-// Solmar Heat v7 — the garage.
-// Engines, armor, nitro, paint. The next tier always costs more than the
-// last, and a hired mate knocks 10% off the bill. Nitro is bought by the
-// charge and burned by the press — one press, one charge, one long boost.
+// Solmar Heat v9 — the garage.
+// Engines, armor, nitro, paint. The next tier always costs more than
+// the last, and a hired mate knocks ten percent off the bill. Nitro is
+// bought by the charge and burned by the press — one press, one charge,
+// one long boost.
 
 import { GARAGE } from './config.js';
 import { applyEngine } from './vehicles.js';
@@ -20,7 +21,7 @@ export function buyEngine(garage, player, rate, car) {
   if (next >= GARAGE.engines.length) return -1;
   const cost = engineCost(next, rate);
   if (player.cash < cost) return -1;
-  player.cash -= cost;
+  player.cash = player.cash - cost;
   garage.engine = next;
   if (car) applyEngine(car, next);
   return cost;
@@ -36,13 +37,14 @@ export function buyArmor(garage, player, rate) {
   if (next >= GARAGE.armors.length) return -1;
   const cost = armorCost(next, rate);
   if (player.cash < cost) return -1;
-  player.cash -= cost;
+  player.cash = player.cash - cost;
   garage.armor = next;
   return cost;
 }
 
 export function armorSoak(garage) {
-  return GARAGE.armors[Math.min(garage.armor, GARAGE.armors.length - 1)].soak;
+  const def = GARAGE.armors[Math.min(garage.armor, GARAGE.armors.length - 1)];
+  return def.soak;
 }
 
 export function nitroCost() {
@@ -52,14 +54,14 @@ export function nitroCost() {
 export function buyNitro(garage, player) {
   if (garage.nitro >= GARAGE.nitro.max) return -1;
   if (player.cash < GARAGE.nitro.cost) return -1;
-  player.cash -= GARAGE.nitro.cost;
-  garage.nitro += 1;
+  player.cash = player.cash - GARAGE.nitro.cost;
+  garage.nitro = garage.nitro + 1;
   return GARAGE.nitro.cost;
 }
 
 export function useNitro(garage, car) {
   if (!car || garage.nitro <= 0 || car.nitroBurn > 0) return false;
-  garage.nitro -= 1;
+  garage.nitro = garage.nitro - 1;
   car.nitroBurn = GARAGE.nitro.burn;
   return true;
 }
@@ -68,7 +70,7 @@ export function buyPaint(garage, player, name) {
   const paint = GARAGE.paints.find((p) => p.name === name);
   if (!paint) return -1;
   if (player.cash < paint.cost) return -1;
-  player.cash -= paint.cost;
+  player.cash = player.cash - paint.cost;
   garage.paint = paint.name;
   return paint.cost;
 }

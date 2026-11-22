@@ -1,9 +1,9 @@
-// Solmar Heat v7 — tuning constants.
-// Every number the game balances on lives here, so a single read tells you
-// what a mission pays, what an upgrade costs, and how the heat behaves.
-// The four v7 systems (booms, districts, RAM/PIT, weapon wheel) get their
-// own blocks at the bottom of this file.
+// Solmar Heat v9 — tuning numbers.
+// Every balance number in the game lives in this one file: what a job
+// pays, what an upgrade costs, how fast the heat cools, how hard a RAM
+// unit hits. Change a number here and the whole game re-balances around it.
 
+// Cash in, cash out.
 export const ECONOMY = {
   startCash: 400,
   taxiFare: 25,
@@ -13,6 +13,8 @@ export const ECONOMY = {
   foodCost: 30,
 };
 
+// The map: half-width in metres, block pitch, road width, and how many
+// of each thing the city starts with. clockRate is game seconds per hour.
 export const WORLD = {
   half: 210,
   block: 60,
@@ -24,6 +26,9 @@ export const WORLD = {
   clockRate: 120,
 };
 
+// The garage sells four engine tiers, three armour tiers, nitro by the
+// charge, and six paints. Top speed and acceleration are metres per
+// second; the boost multiplies top speed while nitro burns.
 export const GARAGE = {
   engines: [
     { name: 'Stock', cost: 0, top: 26, accel: 11 },
@@ -47,6 +52,9 @@ export const GARAGE = {
   ],
 };
 
+// The heat: how long a star takes to cool off, how long a cop has to sit
+// on you to bust you, how close is close enough, and at how many stars
+// the specialists (RAM, PIT, helicopter) come out.
 export const HEAT = {
   decaySeconds: 25,
   bustSeconds: 3,
@@ -56,6 +64,7 @@ export const HEAT = {
   heliAt: 3,
 };
 
+// Respect is the career ladder: points from missions, jobs and wins.
 export const RESPECT = {
   tiers: [
     { points: 0, name: 'Nobody' },
@@ -66,6 +75,8 @@ export const RESPECT = {
   ],
 };
 
+// Four weapons. Fists are always owned; the rest are bought at the Gun
+// Store. Damage is per hit, rate is seconds between hits, range is metres.
 export const WEAPONS = [
   { id: 'fists', name: 'Fists', damage: 12, rate: 0.4, range: 2.5, price: 0 },
   { id: 'pistol', name: 'Pistol', damage: 25, rate: 0.35, range: 40, price: 600 },
@@ -73,8 +84,8 @@ export const WEAPONS = [
   { id: 'shotgun', name: 'Shotgun', damage: 60, rate: 0.9, range: 22, price: 2200 },
 ];
 
-// v7: the city is five named districts. districtAt() in city.js decides
-// which one a position belongs to; standing is tracked per district.
+// Five districts split the map. Standing is tracked per district, so
+// working one neighbourhood does not buy you the others.
 export const DISTRICTS = [
   { id: 'marina', name: 'Marina', blurb: 'The waterfront, where the boats come in after dark.' },
   { id: 'oldtown', name: 'Old Town', blurb: 'Narrow streets, old money, older grudges.' },
@@ -91,7 +102,10 @@ export const DISTRICT_TIERS = [
   { points: 200, name: 'Kingpin' },
 ];
 
-// v7: a car whose health hits zero does not just stop — it blows up.
+// A car at zero health does not stall — it blows up. Radius is metres,
+// damage is the full hit at the centre falling off with distance, flash
+// is the screen-flash length in seconds, wreckBurn is how long the
+// wreck keeps burning, maxWrecks caps how many husks stay in the world.
 export const BOOM = {
   radius: 14,
   damage: 60,
@@ -102,7 +116,9 @@ export const BOOM = {
   chainDelay: 0.25,
 };
 
-// v7: at three stars and up the dispatch sends specialist units.
+// Specialist police units, sent out at three stars and up. RAM is a heavy
+// SUV that tries to run you off the road; PIT is a fast interceptor that
+// slides alongside your rear quarter and spins you out.
 export const POLICE = {
   patrolSpeed: 24,
   ramSpeed: 30,

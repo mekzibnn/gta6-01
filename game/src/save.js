@@ -1,7 +1,8 @@
-// Solmar Heat v7 — career save.
-// One localStorage key holds the whole career. The shape is versioned;
-// a save from another version is ignored and the player starts fresh.
-// v7 adds district standing to the shape (the v2 key stays the same).
+// Solmar Heat v9 — career save.
+// One localStorage key holds the whole career. The shape is versioned:
+// a save written by another version is ignored and the player starts
+// fresh. The key stays the same across versions so a career survives
+// a rebuild of the game code.
 
 export const SAVE_KEY = 'solmar-heat.save.v2';
 export const SAVE_VERSION = 2;
@@ -21,16 +22,21 @@ export function blankCareer() {
   };
 }
 
+// Clean a loaded save: keep every sane field, throw away anything odd.
+// Numbers are floored and clamped at zero; unknown keys are dropped.
 function saneCareer(raw) {
   const blank = blankCareer();
   if (!raw || typeof raw !== 'object' || raw.v !== SAVE_VERSION) return blank;
   const out = { ...blank };
-  if (typeof raw.cash === 'number' && Number.isFinite(raw.cash)) out.cash = Math.max(0, Math.floor(raw.cash));
-  if (typeof raw.respect === 'number' && Number.isFinite(raw.respect)) out.respect = Math.max(0, Math.floor(raw.respect));
+  const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.floor(v)) : null);
+  const cash = num(raw.cash);
+  if (cash !== null) out.cash = cash;
+  const respect = num(raw.respect);
+  if (respect !== null) out.respect = respect;
   if (raw.districtStanding && typeof raw.districtStanding === 'object') {
     for (const key of Object.keys(out.districtStanding)) {
-      const val = raw.districtStanding[key];
-      if (typeof val === 'number' && Number.isFinite(val)) out.districtStanding[key] = Math.max(0, Math.floor(val));
+      const val = num(raw.districtStanding[key]);
+      if (val !== null) out.districtStanding[key] = val;
     }
   }
   if (raw.empire && typeof raw.empire === 'object') {
@@ -46,7 +52,8 @@ function saneCareer(raw) {
   }
   if (raw.garage && typeof raw.garage === 'object') {
     for (const key of ['engine', 'armor', 'nitro']) {
-      if (typeof raw.garage[key] === 'number') out.garage[key] = Math.max(0, Math.floor(raw.garage[key]));
+      const val = num(raw.garage[key]);
+      if (val !== null) out.garage[key] = val;
     }
     if (typeof raw.garage.paint === 'string') out.garage.paint = raw.garage.paint;
   }

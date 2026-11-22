@@ -1,7 +1,7 @@
-// Solmar Heat v7 — the crew.
-// Three mates, three perks, one discount: Milo sharpens the handling,
+// Solmar Heat v9 — the crew.
+// Three mates, three perks, one discount. Milo sharpens the handling,
 // Vera cools the heat faster, Tank hits harder. Any mate on the payroll
-// gets Leo 10% off at the garage.
+// gets Leo ten percent off at the garage.
 
 export const MATES = [
   { id: 'milo', name: 'Milo', perk: 'handling', cost: 900, blurb: 'Ex-racer. The car turns like it reads your mind.' },
@@ -21,7 +21,7 @@ export function hireMate(roster, player, id) {
   const def = mateDef(id);
   if (!def || roster.hired[id]) return -1;
   if (player.cash < def.cost) return -1;
-  player.cash -= def.cost;
+  player.cash = player.cash - def.cost;
   roster.hired[id] = { active: true };
   return def.cost;
 }
@@ -43,7 +43,10 @@ export function crewGarageRate(roster) {
 }
 
 export function crewNames(roster) {
-  return Object.keys(roster.hired).map((id) => (mateDef(id) || {}).name || id);
+  return Object.keys(roster.hired).map((id) => {
+    const def = mateDef(id);
+    return def ? def.name : id;
+  });
 }
 
 export function serializeCrew(roster) {

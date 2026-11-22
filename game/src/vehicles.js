@@ -1,4 +1,4 @@
-// Solmar Heat v7 — cars, traffic, damage, and explosions.
+// Solmar Heat v9 — cars, traffic, damage, and explosions.
 // A car is a circle with a heading and a speed. Traffic follows the grid.
 // Damage is honest: bump a wall hard and the paint suffers; bring a car
 // to zero health and it does not stall — it blows up, and the burning
@@ -17,6 +17,10 @@ export const MODELS = {
   pit: { top: POLICE.pitSpeed, accel: 18, health: POLICE.pitHealth, color: 0x0d0d12, len: 4.2, wid: 1.9 },
 };
 
+// Every car gets its own id, counting up — the dispatch panel, the mesh
+// map and the playtest all rely on ids being unique. (An old build never
+// incremented this counter, so every car was id 1 and most of them never
+// rendered. Never again.)
 let nextId = 1;
 
 export function spawnCar(model, x, z, heading) {
@@ -47,17 +51,26 @@ export function spawnCar(model, x, z, heading) {
 export function spawnTraffic(dice, city, count) {
   const cars = [];
   const kinds = ['sedan', 'sedan', 'taxi', 'sport', 'truck'];
+  const avenues = [-180, -120, -60, 0, 60, 120, 180];
   for (let i = 0; i < count; i += 1) {
-    const avenue = dice.pick([-180, -120, -60, 0, 60, 120, 180]);
+    const avenue = dice.pick(avenues);
     const along = dice.range(-180, 180);
     const vertical = dice.chance(0.5);
-    const car = spawnCar(dice.pick(kinds), vertical ? avenue : along, vertical ? along : avenue, dice.pick([0, Math.PI / 2, Math.PI, -Math.PI / 2]));
+    const car = spawnCar(
+      dice.pick(kinds),
+      vertical ? avenue : along,
+      vertical ? along : avenue,
+      dice.pick([0, Math.PI / 2, Math.PI, -Math.PI / 2]),
+    );
     car.traffic = true;
     car.cruise = dice.range(8, 13);
     car.route = [];
     const base = vertical ? avenue : along;
     for (let k = 0; k < 4; k += 1) {
-      car.route.push({ x: vertical ? base : dice.pick([-180, -120, -60, 0, 60, 120, 180]), z: vertical ? dice.pick([-180, -120, -60, 0, 60, 120, 180]) : base });
+      car.route.push({
+        x: vertical ? base : dice.pick(avenues),
+        z: vertical ? dice.pick(avenues) : base,
+      });
     }
     cars.push(car);
   }
@@ -69,7 +82,8 @@ export function kmh(speed) {
 }
 
 export function applyEngine(car, tier) {
-  const def = GARAGE.engines[Math.max(0, Math.min(tier, GARAGE.engines.length - 1))];
+  const clamped = Math.max(0, Math.min(tier, GARAGE.engines.length - 1));
+  const def = GARAGE.engines[clamped];
   car.engine = tier;
   car.top = def.top;
   car.accel = def.accel;
@@ -94,17 +108,17 @@ export function pushApart(a, b) {
   const nx = dx / d;
   const nz = dz / d;
   const push = overlap / 2;
-  a.x -= nx * push;
-  a.z -= nz * push;
-  b.x += nx * push;
-  b.z += nz * push;
+  a.x = a.x - nx * push;
+  a.z = a.z - nz * push;
+  b.x = b.x + nx * push;
+  b.z = b.z + nz * push;
   const impact = Math.abs(a.speed - b.speed);
-  a.speed *= 0.6;
-  b.speed *= 0.6;
+  a.speed = a.speed * 0.6;
+  b.speed = b.speed * 0.6;
   return impact;
 }
 
-function buildingHit(city, x, z) {
+function buildingAt(city, x, z) {
   for (const b of city.buildings) {
     if (Math.abs(x - b.x) < b.w / 2 + 1.4 && Math.abs(z - b.z) < b.d / 2 + 1.4) return b;
   }
@@ -114,22 +128,24 @@ function buildingHit(city, x, z) {
 export function advanceCar(car, input, dt, world) {
   const boosting = car.nitroBurn > 0;
   const top = car.top * (boosting ? GARAGE.nitro.boost : 1);
-  if (input.up) car.speed += car.accel * dt * (car.speed < 0 ? 2.2 : 1);
-  if (input.down) car.speed -= car.accel * 0.9 * dt;
-  if (!input.up && !input.down) car.speed -= Math.sign(car.speed) * Math.min(Math.abs(car.speed), 6 * dt);
+  if (input.up) car.speed = car.speed + car.accel * dt * (car.speed < 0 ? 2.2 : 1);
+  if (input.down) car.speed = car.speed - car.accel * 0.9 * dt;
+  if (!input.up && !input.down) {
+    car.speed = car.speed - Math.sign(car.speed) * Math.min(Math.abs(car.speed), 6 * dt);
+  }
   if (car.speed > top) car.speed = top;
   if (car.speed < -12) car.speed = -12;
-  const steerPower = 2.1 * Math.min(1, Math.abs(car.speed) / 8) * (world.roster ? crewHandling(world.roster) : 1);
-  if (input.left) car.heading += steerPower * dt * Math.sign(car.speed || 1);
-  if (input.right) car.heading -= steerPower * dt * Math.sign(car.speed || 1);
+  const grip = 2.1 * Math.min(1, Math.abs(car.speed) / 8) * (world.roster ? crewHandling(world.roster) : 1);
+  const dir = Math.sign(car.speed || 1);
+  if (input.left) car.heading = car.heading + grip * dt * dir;
+  if (input.right) car.heading = car.heading - grip * dt * dir;
   if (car.nitroBurn > 0) car.nitroBurn = Math.max(0, car.nitroBurn - dt);
   const nx = car.x + Math.sin(car.heading) * car.speed * dt;
   const nz = car.z + Math.cos(car.heading) * car.speed * dt;
   const moved = Math.abs(car.speed) * dt;
-  const hit = buildingHit(world.city, nx, nz);
-  if (hit) {
+  if (buildingAt(world.city, nx, nz)) {
     const impact = Math.abs(car.speed);
-    car.speed *= -0.25;
+    car.speed = car.speed * -0.25;
     if (impact > 12) damageCar(car, (impact - 12) * 1.5, world);
   } else {
     car.x = nx;
@@ -139,8 +155,8 @@ export function advanceCar(car, input, dt, world) {
   if (Math.abs(car.x) > half || Math.abs(car.z) > half) {
     car.x = Math.max(-half, Math.min(half, car.x));
     car.z = Math.max(-half, Math.min(half, car.z));
-    car.heading += Math.PI;
-    car.speed *= 0.7;
+    car.heading = car.heading + Math.PI;
+    car.speed = car.speed * 0.7;
   }
   return moved;
 }
@@ -152,30 +168,30 @@ export function advanceTrafficCar(car, dt, world) {
   const dz = target.z - car.z;
   const dist = Math.sqrt(dx * dx + dz * dz);
   if (dist < 6) {
-    car.routeAt += 1;
+    car.routeAt = car.routeAt + 1;
     return;
   }
   const want = Math.atan2(dx, dz);
   let diff = want - car.heading;
-  while (diff > Math.PI) diff -= Math.PI * 2;
-  while (diff < -Math.PI) diff += Math.PI * 2;
-  car.heading += Math.max(-1.6 * dt, Math.min(1.6 * dt, diff));
-  car.speed += (car.cruise - car.speed) * Math.min(1, dt * 0.8);
-  car.x += Math.sin(car.heading) * car.speed * dt;
-  car.z += Math.cos(car.heading) * car.speed * dt;
+  while (diff > Math.PI) diff = diff - Math.PI * 2;
+  while (diff < -Math.PI) diff = diff + Math.PI * 2;
+  car.heading = car.heading + Math.max(-1.6 * dt, Math.min(1.6 * dt, diff));
+  car.speed = car.speed + (car.cruise - car.speed) * Math.min(1, dt * 0.8);
+  car.x = car.x + Math.sin(car.heading) * car.speed * dt;
+  car.z = car.z + Math.cos(car.heading) * car.speed * dt;
   const half = world.city.half;
   if (Math.abs(car.x) > half || Math.abs(car.z) > half) {
-    car.heading += Math.PI;
+    car.heading = car.heading + Math.PI;
     car.x = Math.max(-half, Math.min(half, car.x));
     car.z = Math.max(-half, Math.min(half, car.z));
   }
 }
 
-// v7: damage a car; at zero health it explodes instead of stopping.
+// Damage a car; at zero health it explodes instead of stopping.
 export function damageCar(car, amount, world) {
   if (!car || car.exploded) return false;
   const soak = car.armor ? GARAGE.armors[Math.min(car.armor, GARAGE.armors.length - 1)].soak : 0;
-  car.health -= amount * (1 - soak);
+  car.health = car.health - amount * (1 - soak);
   if (car.health <= 0) {
     car.health = 0;
     explodeCar(car, world);
@@ -199,7 +215,7 @@ export function explodeCar(car, world) {
     if (other === car || other.exploded) continue;
     const d = carDistance(car, other);
     if (d < BOOM.radius) {
-      other.health -= BOOM.damage * (1 - d / BOOM.radius);
+      other.health = other.health - BOOM.damage * (1 - d / BOOM.radius);
       if (other.health <= 0 && !other.exploded) explodeCar(other, world);
     }
   }
@@ -219,14 +235,14 @@ export function explodeCar(car, world) {
 
 export function tickBooms(world, dt) {
   for (let i = world.booms.length - 1; i >= 0; i -= 1) {
-    world.booms[i].t += dt;
+    world.booms[i].t = world.booms[i].t + dt;
     if (world.booms[i].t >= world.booms[i].dur) world.booms.splice(i, 1);
   }
 }
 
 export function tickWrecks(world, dt) {
   for (const wreck of world.wrecks) {
-    wreck.t += dt;
+    wreck.t = wreck.t + dt;
     if (wreck.t > BOOM.wreckBurn) wreck.cold = true;
   }
 }
@@ -240,10 +256,10 @@ export function collideWrecks(world, car) {
     const d = Math.sqrt(dx * dx + dz * dz);
     if (d < 3.4 && d > 0.01) {
       const push = 3.4 - d;
-      car.x += (dx / d) * push;
-      car.z += (dz / d) * push;
+      car.x = car.x + (dx / d) * push;
+      car.z = car.z + (dz / d) * push;
       hit = Math.max(hit, Math.abs(car.speed));
-      car.speed *= 0.5;
+      car.speed = car.speed * 0.5;
     }
   }
   return hit;

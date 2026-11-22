@@ -1,13 +1,9 @@
-// Solmar Heat v7 — the game.
+// Solmar Heat v9 — the game.
 // Boots the world and runs the loop: read input, move the player and the
 // cars, run the traffic and the crowd, chase with the cops and the heli,
 // tick the missions, the empire, the crew and the races, turn the day,
 // and draw it all. window.__game is the debug handle the playtest and
 // the screenshots drive the game through.
-//
-// v7 adds four systems on top of the v6 game: exploding cars that leave
-// burning wrecks, standing per district, RAM and PIT police units, and a
-// hold-Q weapon wheel. Everything v6 had is still here.
 
 import { ECONOMY, GARAGE, HEAT, RESPECT, WORLD, WEAPONS, DISTRICT_TIERS, BOOM } from './config.js';
 import { makeDice, seedFromClock, seedFromQuery } from './random.js';
@@ -44,8 +40,8 @@ function buildWorld(seed) {
   const car = spawnCar('sedan', SPOTS.hideout.x + 6, SPOTS.hideout.z, 0);
   const parked = [];
   for (let i = 0; i < WORLD.parkedCount; i += 1) {
-    const spot = dice.pick(['sport', 'taxi', 'sedan']);
-    parked.push(spawnCar(spot, SPOTS.hideout.x - 8 - i * 7, SPOTS.hideout.z + 6, 0));
+    const model = dice.pick(['sport', 'taxi', 'sedan']);
+    parked.push(spawnCar(model, SPOTS.hideout.x - 8 - i * 7, SPOTS.hideout.z + 6, 0));
   }
   const traffic = spawnTraffic(dice, city, WORLD.trafficCount);
   const crowd = initCrowd(dice, city, WORLD.pedCount);
@@ -53,7 +49,12 @@ function buildWorld(seed) {
   const empire = restoreEmpire(career.empire || null);
   const roster = restoreCrew(career.roster || null);
   const streetRaces = restoreRaces(career.streetRaces || null);
-  const garage = { engine: career.garage.engine, armor: career.garage.armor, nitro: career.garage.nitro, paint: career.garage.paint };
+  const garage = {
+    engine: career.garage.engine,
+    armor: career.garage.armor,
+    nitro: career.garage.nitro,
+    paint: career.garage.paint,
+  };
   const missions = initMissions();
   missions.done = (career.missionsDone || []).slice();
   missions.index = Math.min(missions.done.length, MISSIONS.length);
@@ -70,8 +71,10 @@ function buildWorld(seed) {
     if (roster.hired[id].active) mates.push(spawnMate(id, player.x + 4, player.z + 4));
   }
   return {
-    seed, dice, career, city, clock, weather, player, car, cars: [car, ...parked, ...traffic], traffic, crowd, peds: crowd, shoppers,
-    empire, roster, streetRaces, garage, mission: missions, ledger, stats: ledger, audio, shops, mates,
+    seed, dice, career, city, clock, weather, player, car,
+    cars: [car, ...parked, ...traffic], traffic, crowd, peds: crowd, shoppers,
+    empire, roster, streetRaces, garage, mission: missions, ledger, stats: ledger,
+    audio, shops, mates,
     cops: [],
     wrecks: [],
     booms: [],
@@ -132,8 +135,9 @@ function districtTier(points) {
 function addDistrictStanding(world, amount) {
   const district = districtAt(world.player.x, world.player.z);
   const before = districtTier(world.player.districtStanding[district.id] || 0);
-  world.player.districtStanding[district.id] = Math.min(200, (world.player.districtStanding[district.id] || 0) + amount);
-  const after = districtTier(world.player.districtStanding[district.id]);
+  const now = Math.min(200, (world.player.districtStanding[district.id] || 0) + amount);
+  world.player.districtStanding[district.id] = now;
+  const after = districtTier(now);
   if (after.name !== before.name) {
     showToast(world.hud, `${district.name} respects you now — ${after.name}`);
   }
@@ -247,7 +251,7 @@ function ensureCops(world) {
 
 function doBust(world) {
   const lost = Math.floor(world.player.cash * ECONOMY.bustLoss);
-  world.player.cash -= lost;
+  world.player.cash = world.player.cash - lost;
   world.player.wanted = 0;
   world.cops = [];
   world.player.x = SPOTS.hideout.x;
@@ -270,7 +274,7 @@ function sellCarAtChop(world) {
   if (dx * dx + dz * dz > 100) return;
   const values = { sedan: 800, sport: 2000, taxi: 600, truck: 1200, cop: 0, ram: 0, pit: 0 };
   const value = Math.round((values[car.model] || 500) * ECONOMY.chopRate);
-  world.player.cash += value;
+  world.player.cash = world.player.cash + value;
   world.soldCar = true;
   const idx = world.cars.indexOf(car);
   if (idx >= 0) world.cars.splice(idx, 1);
@@ -293,31 +297,35 @@ function drainSfx(world) {
   world.sfx.length = 0;
 }
 
+function stageShotCar(world, model, x, z, engineTier) {
+  const car = spawnCar(model, x, z, 0);
+  if (engineTier) applyEngine(car, engineTier);
+  car.color = 0xff7a1a;
+  world.cars.push(car);
+  world.car = car;
+  world.player.inCar = true;
+  return car;
+}
+
 function applyShot(world, name) {
   world.shot = name;
   const p = world.player;
-  const garageSpot = world.city.spots.garage;
   if (name === 'cover') {
     world.clock.hour = 18.0;
     p.wanted = 4;
     p.x = 0;
     p.z = 60;
-    const car = spawnCar('sport', 0, 60, 0);
-    applyEngine(car, 2);
-    car.color = 0xff7a1a;
-    world.cars.push(car);
-    world.car = car;
-    p.inCar = true;
+    stageShotCar(world, 'sport', 0, 60, 2);
     world.garage.nitro = 2;
     world.heli.active = true;
     world.cops = [spawnCop(-14, 78, 'ram'), spawnCop(14, 40, 'pit'), spawnCop(-30, 30, 'patrol')];
-    world.wrecks.push({ x: -18, z: 88, heading: 0.6, model: 'sedan', color: 0x8a94a6, t: 5, cold: false });
+    world.wrecks.push({ x: 0, z: 95, heading: 0.6, model: 'sedan', color: 0x8a94a6, t: 5, cold: false });
     world.mission.index = 0;
     world.mission.step = 0;
     world.camFixed = { pos: [-16, 7, 34], look: [0, 2, 70] };
-    // v8 staging: a hired mate (crew card), the radio on, light armour,
-    // a pistol in the wheel, traffic ahead and walkers on the sidewalk —
-    // the cover should read as a finished game, not a prototype.
+    // A hired mate (crew card), the radio on, light armour, a pistol in
+    // the wheel, traffic ahead and walkers on the sidewalk — the cover
+    // should read as a finished game, not a prototype.
     world.roster.hired.milo = { active: true };
     world.mates.push(spawnMate('milo', p.x + 4, p.z + 4));
     world.radio = true;
@@ -325,7 +333,7 @@ function applyShot(world, name) {
     world.garage.armor = 1;
     world.player.weapons[1] = true;
     world.player.weapon = 1;
-    world.cars.push(spawnCar('sedan', 8, 95, 0));
+    world.cars.push(spawnCar('sedan', 8, 118, 0));
     world.cars.push(spawnCar('taxi', -10, 118, 0));
     for (const [wx, wz] of [[10, 74], [-12, 84], [12, 104], [-9, 126]]) {
       const w = spawnWalker(wx, wz);
@@ -337,12 +345,7 @@ function applyShot(world, name) {
     world.clock.hour = 17.8;
     p.x = 0;
     p.z = 100;
-    const car = spawnCar('sport', 0, 100, 0);
-    applyEngine(car, 2);
-    car.color = 0xff7a1a;
-    world.cars.push(car);
-    world.car = car;
-    p.inCar = true;
+    stageShotCar(world, 'sport', 0, 100, 2);
     world.garage.engine = 2;
     world.garage.nitro = 2;
     world.garage.paint = 'Sunset Orange';
@@ -362,13 +365,8 @@ function applyShot(world, name) {
     p.wanted = 3;
     p.x = 0;
     p.z = 0;
-    const car = spawnCar('sport', 0, 0, 0);
-    applyEngine(car, 2);
-    car.color = 0xff7a1a;
+    const car = stageShotCar(world, 'sport', 0, 0, 2);
     car.nitroBurn = 2;
-    world.cars.push(car);
-    world.car = car;
-    p.inCar = true;
     world.garage.nitro = 2;
     world.heli.active = true;
     world.cops = [spawnCop(-12, 22, 'ram'), spawnCop(16, -14, 'pit')];
@@ -389,7 +387,7 @@ function menuFor(world) {
   return [];
 }
 
-function tickWheel(world, keys, justPressed, dt) {
+function tickWheel(world, keys, justPressed) {
   const wheel = world.wheel;
   const holding = keys.heldQ || keys.heldTab;
   if (justPressed.KeyQ || justPressed.Tab) {
@@ -453,7 +451,7 @@ function loop(world, hud, render, input, last) {
     renderFrame(render, world, dt);
     return;
   }
-  world.time += dt;
+  world.time = world.time + dt;
   world.player.carSpeed = world.car ? world.car.speed : 0;
   startAudio(world.audio);
   tickClock(world.clock, dt, WORLD.clockRate);
@@ -475,9 +473,9 @@ function loop(world, hud, render, input, last) {
   // Heat: the current mission can lock it; otherwise it cools off.
   const mission = currentMission(world.mission);
   world.heat.locked = !!mission && mission.id === 'm10' && !world.mission.done.includes('m10');
-  world.crimeTimer += dt;
+  world.crimeTimer = world.crimeTimer + dt;
   if (!world.heat.locked && world.player.wanted > 0 && world.crimeTimer > HEAT.decaySeconds / crewDecay(world.roster)) {
-    world.player.wanted -= 1;
+    world.player.wanted = world.player.wanted - 1;
     world.crimeTimer = 0;
   }
   const wantSiren = world.player.wanted > 0;
@@ -533,7 +531,7 @@ function loop(world, hud, render, input, last) {
   }
 
   // Weapon wheel (hold Q or Tab) — Q tap while driving steps out.
-  tickWheel(world, keys, justPressed, dt);
+  tickWheel(world, keys, justPressed);
 
   // Nitro, punch, shoot (G fires on press and keeps firing while held).
   if (justPressed.Space && world.player.inCar && world.car) {
@@ -542,7 +540,7 @@ function loop(world, hud, render, input, last) {
     }
   }
   if (justPressed.KeyF && !world.player.inCar) playerPunch(world.player, world);
-  world.shootCooldown -= dt;
+  world.shootCooldown = world.shootCooldown - dt;
   if (input.keys.KeyG && world.shootCooldown <= 0 && !world.player.inCar && world.player.weapon > 0) {
     playerShoot(world.player, world);
     const def = WEAPONS[world.player.weapon] || WEAPONS[0];
@@ -572,7 +570,7 @@ function loop(world, hud, render, input, last) {
     advanceCop(cop, world, dt);
     if (!world.shopOpen && !world.streetRaces.active) {
       if (copBusts(cop, world.player)) {
-        cop.bustMeter += dt;
+        cop.bustMeter = cop.bustMeter + dt;
         if (cop.bustMeter >= HEAT.bustSeconds) {
           doBust(world);
           break;
@@ -583,7 +581,7 @@ function loop(world, hud, render, input, last) {
     }
   }
   if (world.busted) {
-    world.bustedT -= dt;
+    world.bustedT = world.bustedT - dt;
     if (world.bustedT <= 0) world.busted = false;
   }
 
@@ -666,7 +664,7 @@ function loop(world, hud, render, input, last) {
         const dz = gate.z - world.player.z;
         const nearGate = dx * dx + dz * dz < 100;
         if (nearGate && world.lastFreeGate !== key) {
-          world.gatesPassed += 1;
+          world.gatesPassed = world.gatesPassed + 1;
           world.lastFreeGate = key;
         } else if (!nearGate && world.lastFreeGate === key) {
           world.lastFreeGate = null;
@@ -710,7 +708,7 @@ function loop(world, hud, render, input, last) {
   }
 
   // Autosave.
-  world.saveT += dt;
+  world.saveT = world.saveT + dt;
   if (world.saveT > 20) {
     world.saveT = 0;
     saveWorld(world);
@@ -720,7 +718,7 @@ function loop(world, hud, render, input, last) {
   drawHud(hud, world, dt);
   renderFrame(render, world, dt);
   if (world.shot) {
-    world.shotFrames += 1;
+    world.shotFrames = world.shotFrames + 1;
     if (world.shotFrames >= 3) window.__shotReady = true;
   }
 }

@@ -1,7 +1,9 @@
-// Solmar Heat v7 — the business empire.
+// Solmar Heat v9 — the business empire.
 // Four fronts to buy: a laundry, a car wash, a taxi company, and a
 // nightclub that pays double after dark. They pay every game hour, and
 // the take lands in the player's pocket whether Leo is there or not.
+// Each level multiplies the hourly take; upgrading costs the base price
+// times the current level.
 
 export const VENTURES = [
   { id: 'solmar-laundry', name: 'Solmar Laundry', cost: 500, hourly: 35, night: false },
@@ -20,15 +22,16 @@ export function ventureDef(id) {
 
 export function ventureHourly(def, level, hour) {
   if (!def) return 0;
-  const night = hour >= 19 || hour < 6;
-  const boost = def.night && night ? 2 : 1;
+  const dark = hour >= 19 || hour < 6;
+  const boost = def.night && dark ? 2 : 1;
   return def.hourly * (level || 1) * boost;
 }
 
 export function empireHourly(empire, hour) {
   let total = 0;
   for (const id of Object.keys(empire.owned)) {
-    total += ventureHourly(ventureDef(id), empire.owned[id].level, hour);
+    const def = ventureDef(id);
+    total = total + ventureHourly(def, empire.owned[id].level, hour);
   }
   return total;
 }
@@ -37,7 +40,7 @@ export function buyVenture(empire, player, id) {
   const def = ventureDef(id);
   if (!def || empire.owned[id]) return -1;
   if (player.cash < def.cost) return -1;
-  player.cash -= def.cost;
+  player.cash = player.cash - def.cost;
   empire.owned[id] = { level: 1 };
   return def.cost;
 }
@@ -48,8 +51,8 @@ export function upgradeVenture(empire, player, id) {
   if (!def || !owned) return -1;
   const cost = def.cost * owned.level;
   if (player.cash < cost) return -1;
-  player.cash -= cost;
-  owned.level += 1;
+  player.cash = player.cash - cost;
+  owned.level = owned.level + 1;
   return cost;
 }
 
@@ -57,8 +60,8 @@ export function accrueEmpire(empire, hours, player, hour) {
   if (hours <= 0) return 0;
   const take = empireHourly(empire, hour) * hours;
   if (take > 0) {
-    player.cash += take;
-    empire.totalEarned += take;
+    player.cash = player.cash + take;
+    empire.totalEarned = empire.totalEarned + take;
   }
   return take;
 }

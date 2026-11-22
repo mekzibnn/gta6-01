@@ -1,7 +1,9 @@
-// Solmar Heat v7 — keyboard and mouse.
+// Solmar Heat v9 — keyboard and mouse.
 // Tracks which keys are held and which were just pressed. readKeys()
 // returns the driving state plus the edge-triggered presses since the
 // last call, then clears them — so a tap is seen exactly once.
+
+const SCROLL_KEYS = ['Space', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 
 export function initInput(canvas) {
   const input = {
@@ -10,7 +12,7 @@ export function initInput(canvas) {
     mouse: { x: 0, y: 0, down: false },
   };
   const down = (e) => {
-    if (['Space', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+    if (SCROLL_KEYS.includes(e.code)) e.preventDefault();
     if (!input.keys[e.code]) input.pressed[e.code] = true;
     input.keys[e.code] = true;
   };

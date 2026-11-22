@@ -1,4 +1,4 @@
-// Solmar Heat v7 — the HUD.
+// Solmar Heat v9 — the HUD.
 // A 2D canvas over the 3D view. Everything the player needs is on it:
 // cash, respect, health, the district they are standing in, the wanted
 // stars (with RAM and PIT tags when the specialists are out), the empire,
@@ -11,7 +11,7 @@ import { MISSIONS, currentMission, currentStep } from './missions.js';
 import { MATES } from './crew.js';
 import { carDistance } from './vehicles.js';
 
-// v8: the mission banner is three lines — MISSION n · NAME with its stage,
+// The mission banner is three lines — MISSION n · NAME with its stage,
 // the objective, and what comes NEXT — like the top entries' banners.
 function bannerLines(world) {
   const m = currentMission(world.mission);
@@ -24,8 +24,7 @@ function bannerLines(world) {
   const objective = step ? step.text : m.brief;
   let next = '';
   if (world.mission.step + 1 < total) {
-    const ns = m.steps[world.mission.step + 1];
-    next = `NEXT: ${ns.text}`;
+    next = `NEXT: ${m.steps[world.mission.step + 1].text}`;
   } else if (idx + 1 < MISSIONS.length) {
     next = `NEXT: MISSION ${idx + 2} · ${MISSIONS[idx + 1].name.toUpperCase()}`;
   } else {
@@ -34,7 +33,7 @@ function bannerLines(world) {
   return { title, objective, next };
 }
 
-// v8: car display names — the player's ride reads as a named car, not a
+// Car display names — the player's ride reads as a named car, not a
 // model key.
 const CAR_NAMES = { sport: 'Solmar GT', sedan: 'Solmar Sedan', taxi: 'Sunset Taxi', truck: 'City Hauler' };
 
@@ -51,8 +50,9 @@ function drawDispatch(ctx, world) {
   shown.forEach((cop, i) => {
     const dist = Math.round(carDistance(cop, world.player));
     const role = cop.kind === 'ram' ? 'RAM' : cop.kind === 'pit' ? 'PIT' : 'PATROL';
+    const roleColor = cop.kind === 'ram' ? '#ff9f1a' : cop.kind === 'pit' ? '#ff4d6d' : '#4da3ff';
     text(ctx, `SPD-${String(cop.id).padStart(2, '0')}`, 1070, 316 + i * 18, 12, '#fff', 'left');
-    text(ctx, role, 1140, 316 + i * 18, 12, cop.kind === 'ram' ? '#ff9f1a' : cop.kind === 'pit' ? '#ff4d6d' : '#4da3ff', 'left', true);
+    text(ctx, role, 1140, 316 + i * 18, 12, roleColor, 'left', true);
     text(ctx, `${dist}m`, 1250, 316 + i * 18, 12, '#ddd', 'right');
   });
   return h + 8;
@@ -129,7 +129,7 @@ function drawWeaponSlots(ctx, world) {
     text(ctx, `${i + 1}`, x + 6, y + 11, 10, sel ? '#111' : '#aaa', 'left', true);
     text(ctx, w.name, x + bw / 2, y + 12, 11, sel ? '#111' : owned ? '#fff' : '#888', 'center', true);
     text(ctx, owned ? 'ready' : 'locked', x + bw / 2, y + 24, 9, sel ? '#111' : owned ? '#ffd23f' : '#666', 'center');
-    x += bw + gap;
+    x = x + bw + gap;
   });
 }
 
@@ -286,6 +286,50 @@ function drawWheel(ctx, world) {
   text(ctx, 'release Q to confirm', cx, cy + r + 28, 13, '#ddd', 'center');
 }
 
+function drawBanner(ctx, world, hud, dt) {
+  if (hud.bannerT <= 0) return;
+  hud.bannerT = hud.bannerT - dt;
+  const alpha = Math.min(1, hud.bannerT);
+  // Three banner shapes: 'mission' (step banner — name, stage, objective,
+  // next), 'done' (completion — name, reward, next mission), 'plain'
+  // (one line, e.g. BUSTED / race won).
+  let lines = null;
+  if (hud.bannerKind === 'mission') {
+    const bl = bannerLines(world);
+    if (bl) lines = [bl.title, bl.objective, bl.next];
+  } else if (hud.bannerKind === 'done' && hud.bannerData) {
+    const d = hud.bannerData;
+    const idx = MISSIONS.indexOf(d.mission);
+    const next = idx + 1 < MISSIONS.length
+      ? `NEXT: MISSION ${idx + 2} · ${MISSIONS[idx + 1].name.toUpperCase()}`
+      : 'NEXT: OWN SOLMAR';
+    lines = [`MISSION ${idx + 1} · ${d.mission.name.toUpperCase()} — COMPLETE`, `$${d.reward}`, next];
+  }
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = 'rgba(10,18,26,0.72)';
+  ctx.font = '700 20px system-ui, sans-serif';
+  if (lines) {
+    const bw = Math.min(900, 40 + Math.max(
+      ctx.measureText(lines[0]).width * 0.75,
+      ctx.measureText(lines[1]).width,
+      ctx.measureText(lines[2]).width * 0.65,
+    ));
+    ctx.fillRect(640 - bw / 2, 96, bw, 84);
+    ctx.strokeStyle = '#ffd23f';
+    ctx.strokeRect(640 - bw / 2 + 0.5, 96.5, bw, 84);
+    text(ctx, lines[0], 640, 118, 14, '#fff', 'center', true);
+    text(ctx, lines[1], 640, 144, 20, '#ffd23f', 'center', true);
+    text(ctx, lines[2], 640, 166, 12, '#aaa', 'center');
+  } else {
+    const bw = Math.min(900, 40 + ctx.measureText(hud.banner).width);
+    ctx.fillRect(640 - bw / 2, 96, bw, 46);
+    ctx.strokeStyle = '#ffd23f';
+    ctx.strokeRect(640 - bw / 2 + 0.5, 96.5, bw, 46);
+    text(ctx, hud.banner, 640, 126, 20, '#ffd23f', 'center', true);
+  }
+  ctx.globalAlpha = 1;
+}
+
 export function drawHud(hud, world, dt) {
   const ctx = hud.ctx;
   if (!ctx) return;
@@ -298,52 +342,11 @@ export function drawHud(hud, world, dt) {
   const hh = String(Math.floor(hour) % 24).padStart(2, '0');
   const mm = String(Math.floor((hour % 1) * 60)).padStart(2, '0');
 
-  // Snapshot the banner state before it ticks down: the centered mission
+  // Snapshot the banner state before it ticks down: the centred mission
   // banner and the persistent objective strip show the same step, so they
   // are never drawn together (they used to overlap and the texts collided).
   const bannerUp = hud.bannerT > 0;
-  if (hud.bannerT > 0) {
-    hud.bannerT -= dt;
-    const alpha = Math.min(1, hud.bannerT);
-    // Three banner shapes: 'mission' (step banner — name, stage, objective,
-    // next), 'done' (completion — name, reward, next mission), 'plain'
-    // (one line, e.g. BUSTED / race won).
-    let lines = null;
-    if (hud.bannerKind === 'mission') {
-      const bl = bannerLines(world);
-      if (bl) lines = [bl.title, bl.objective, bl.next];
-    } else if (hud.bannerKind === 'done' && hud.bannerData) {
-      const d = hud.bannerData;
-      const idx = MISSIONS.indexOf(d.mission);
-      const next = idx + 1 < MISSIONS.length
-        ? `NEXT: MISSION ${idx + 2} · ${MISSIONS[idx + 1].name.toUpperCase()}`
-        : 'NEXT: OWN SOLMAR';
-      lines = [`MISSION ${idx + 1} · ${d.mission.name.toUpperCase()} — COMPLETE`, `$${d.reward}`, next];
-    }
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = 'rgba(10,18,26,0.72)';
-    ctx.font = '700 20px system-ui, sans-serif';
-    if (lines) {
-      const bw = Math.min(900, 40 + Math.max(
-        ctx.measureText(lines[0]).width * 0.75,
-        ctx.measureText(lines[1]).width,
-        ctx.measureText(lines[2]).width * 0.65,
-      ));
-      ctx.fillRect(640 - bw / 2, 96, bw, 84);
-      ctx.strokeStyle = '#ffd23f';
-      ctx.strokeRect(640 - bw / 2 + 0.5, 96.5, bw, 84);
-      text(ctx, lines[0], 640, 118, 14, '#fff', 'center', true);
-      text(ctx, lines[1], 640, 144, 20, '#ffd23f', 'center', true);
-      text(ctx, lines[2], 640, 166, 12, '#aaa', 'center');
-    } else {
-      const bw = Math.min(900, 40 + ctx.measureText(hud.banner).width);
-      ctx.fillRect(640 - bw / 2, 96, bw, 46);
-      ctx.strokeStyle = '#ffd23f';
-      ctx.strokeRect(640 - bw / 2 + 0.5, 96.5, bw, 46);
-      text(ctx, hud.banner, 640, 126, 20, '#ffd23f', 'center', true);
-    }
-    ctx.globalAlpha = 1;
-  }
+  drawBanner(ctx, world, hud, dt);
 
   // Top left: cash, respect, objective.
   text(ctx, `$${Math.floor(player.cash).toLocaleString('en-US')}`, 20, 34, 26, '#7CFC9A', 'left', true);
@@ -367,9 +370,9 @@ export function drawHud(hud, world, dt) {
   }
 
   // Top right: wanted stars, RAM/PIT tags, minimap, clock.
-  let sx = 1280 - 20;
   for (let i = 0; i < 5; i += 1) {
-    text(ctx, i < player.wanted ? '★' : '☆', sx - i * 26, 34, 24, i < player.wanted ? '#ff4d6d' : 'rgba(255,255,255,0.5)', 'right', true);
+    const sx = 1280 - 20 - i * 26;
+    text(ctx, i < player.wanted ? '★' : '☆', sx, 34, 24, i < player.wanted ? '#ff4d6d' : 'rgba(255,255,255,0.5)', 'right', true);
   }
   const kinds = new Set((world.cops || []).map((c) => c.kind));
   let tagX = 1280 - 20;
@@ -377,7 +380,7 @@ export function drawHud(hud, world, dt) {
     ctx.fillStyle = '#ff9f1a';
     ctx.fillRect(tagX - 52, 44, 52, 18);
     text(ctx, 'RAM', tagX - 26, 57, 11, '#111', 'center', true);
-    tagX -= 58;
+    tagX = tagX - 58;
   }
   if (kinds.has('pit')) {
     ctx.fillStyle = '#ff4d6d';
@@ -448,7 +451,7 @@ export function drawHud(hud, world, dt) {
 
   // Toast and prompt.
   if (hud.toastT > 0) {
-    hud.toastT -= dt;
+    hud.toastT = hud.toastT - dt;
     ctx.globalAlpha = Math.min(1, hud.toastT);
     text(ctx, hud.toast, 640, 600, 16, '#ffd23f', 'center', true);
     ctx.globalAlpha = 1;

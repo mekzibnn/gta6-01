@@ -1,4 +1,4 @@
-// Solmar Heat v7 — storefronts.
+// Solmar Heat v9 — storefronts.
 // Every place you can walk up to and press E. A shop is a label and a
 // radius; a menu is a list of numbered buys. Buying closes the menu.
 // The Chop Shop is not a menu — drive a car in and it is sold on the spot.
@@ -11,6 +11,13 @@ import { engineCost, buyEngine, armorCost, buyArmor, buyNitro, buyPaint } from '
 import { healPlayer } from './actors.js';
 
 const RADIUS = 10;
+const ENGINE_NAMES = ['', 'Street', 'Race', 'Pro'];
+const ARMOR_NAMES = ['', 'Light', 'Heavy'];
+const PAINTS = ['Sunset Orange', 'Midnight Blue', 'Lime Rush', 'Cherry Red', 'Pearl White', 'Shadow Black'];
+
+function item(slot, name, price, run) {
+  return { slot, name, price, run };
+}
 
 export function initShops(city) {
   const at = (key) => city.spots[key];
@@ -22,9 +29,15 @@ export function initShops(city) {
     { id: 'diner', label: 'Diner', kind: 'food', x: at('diner').x, z: at('diner').z },
     { id: 'chop', label: 'Chop Shop', kind: 'chop', x: at('chopShop').x, z: at('chopShop').z },
   ];
-  for (const id of ['solmar-laundry', 'sunset-carwash', 'sunset-taxi', 'club-neon']) {
+  const ventureSpots = {
+    'solmar-laundry': 'laundry',
+    'sunset-carwash': 'carWash',
+    'sunset-taxi': 'taxiCo',
+    'club-neon': 'nightclub',
+  };
+  for (const id of Object.keys(ventureSpots)) {
     const def = ventureDef(id);
-    const spot = at({ 'solmar-laundry': 'laundry', 'sunset-carwash': 'carWash', 'sunset-taxi': 'taxiCo', 'club-neon': 'nightclub' }[id]);
+    const spot = at(ventureSpots[id]);
     shops.push({ id, label: def.name, kind: 'venture', x: spot.x, z: spot.z });
   }
   return shops;
@@ -51,24 +64,19 @@ export function shopPrompt(shop) {
   return `E — ${shop.label}`;
 }
 
-function item(slot, name, price, run) {
-  return { slot, name, price, run };
-}
-
 export function garageMenu(world) {
   const rate = crewGarageRate(world.roster);
   const items = [];
   const nextEngine = world.garage.engine + 1;
   if (nextEngine < 4) {
-    items.push(item(1, `Engine ${nextEngine} — ${['', 'Street', 'Race', 'Pro'][nextEngine]}`, engineCost(nextEngine, rate), () => buyEngine(world.garage, world.player, rate, world.car) >= 0));
+    items.push(item(1, `Engine ${nextEngine} — ${ENGINE_NAMES[nextEngine]}`, engineCost(nextEngine, rate), () => buyEngine(world.garage, world.player, rate, world.car) >= 0));
   }
   const nextArmor = world.garage.armor + 1;
   if (nextArmor < 3) {
-    items.push(item(2, `Armor ${nextArmor} — ${['', 'Light', 'Heavy'][nextArmor]}`, armorCost(nextArmor, rate), () => buyArmor(world.garage, world.player, rate) >= 0));
+    items.push(item(2, `Armor ${nextArmor} — ${ARMOR_NAMES[nextArmor]}`, armorCost(nextArmor, rate), () => buyArmor(world.garage, world.player, rate) >= 0));
   }
   items.push(item(3, 'Nitro charge', 300, () => buyNitro(world.garage, world.player) >= 0));
-  const paints = ['Sunset Orange', 'Midnight Blue', 'Lime Rush', 'Cherry Red', 'Pearl White', 'Shadow Black'];
-  const nextPaint = paints[(paints.indexOf(world.garage.paint) + 1) % paints.length];
+  const nextPaint = PAINTS[(PAINTS.indexOf(world.garage.paint) + 1) % PAINTS.length];
   items.push(item(4, `Paint — ${nextPaint}`, 200, () => buyPaint(world.garage, world.player, nextPaint) >= 0));
   return items;
 }
@@ -104,7 +112,7 @@ export function gunMenu(world) {
     const owned = !!world.player.weapons[i + 1];
     return item(i + 1, owned ? `${w.name} — owned` : `Buy ${w.name} — $${w.price}`, w.price, () => {
       if (world.player.weapons[i + 1] || world.player.cash < w.price) return false;
-      world.player.cash -= w.price;
+      world.player.cash = world.player.cash - w.price;
       world.player.weapons[i + 1] = true;
       return true;
     });
@@ -114,7 +122,7 @@ export function gunMenu(world) {
 export function foodMenu(world) {
   return [item(1, 'Meal — heals 40', 30, () => {
     if (world.player.cash < 30 || world.player.health >= 100) return false;
-    world.player.cash -= 30;
+    world.player.cash = world.player.cash - 30;
     healPlayer(world.player, 40);
     return true;
   })];

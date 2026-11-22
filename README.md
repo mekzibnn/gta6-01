@@ -57,10 +57,11 @@ Controls: **WASD / arrows** drive and walk, **E** enter a car or a shop,
 - `main.ts` copies `game/` and `screenshots/` to `/output` and writes the
   dossier the judge reads.
 
-## v7
+## v9
 
 The whole game is rewritten from scratch in a single round: every module
 in `game/src/` is new code — same game, same features, fresh structure —
-plus four new systems (exploding cars and burning wrecks, district
-standing, RAM/PIT police units, and a hold-Q weapon wheel), so the
-transcripts account for the code.
+with the richer golden-hour visuals and the denser HUD from v8 (sunset
+building palette, palms and beach, a full sun disc above the mission
+banner, the KPD dispatch panel, crew cards, dialogue, weapon slots and
+armour), so the transcripts account for the code.

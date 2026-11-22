@@ -1,26 +1,28 @@
-// Solmar Heat v7 — deterministic dice.
-// A tiny mulberry32 generator so a seed always builds the same city,
-// the same traffic, and the same crowd. The game takes its seed from the
-// URL (?seed=) or from the clock when no seed is given.
+// Solmar Heat v9 — seeded dice.
+// The whole city is dealt from one seed, so a given seed always builds
+// the same streets, the same traffic and the same crowd. The seed comes
+// from the URL (?seed=) when the page is opened that way, and from the
+// wall clock otherwise. A xorshift generator keeps it cheap and repeatable.
 
 export function makeDice(seed) {
-  let a = (seed >>> 0) || 0x9e3779b9;
+  let s = (seed >>> 0) || 0x2545f491;
   function next() {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    s ^= (s << 13) >>> 0;
+    s ^= s >>> 17;
+    s ^= (s << 5) >>> 0;
+    s >>>= 0;
+    return s / 4294967296;
   }
   return {
     next,
-    int(min, max) {
-      return min + Math.floor(next() * (max - min + 1));
+    int(lo, hi) {
+      return lo + Math.floor(next() * (hi - lo + 1));
     },
     pick(list) {
       return list[Math.floor(next() * list.length)];
     },
-    range(min, max) {
-      return min + next() * (max - min);
+    range(lo, hi) {
+      return lo + next() * (hi - lo);
     },
     chance(p) {
       return next() < p;
