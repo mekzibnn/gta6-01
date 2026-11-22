@@ -438,11 +438,15 @@ export function renderFrame(state, world, dt) {
     } else {
       // The sun hangs in the sky ahead of the camera (a skybox sun): it is
       // always in frame at golden hour, low on the horizon, higher at noon.
+      // Golden-hour height 120 (not 95): at 95 the disc sat half behind the
+      // centered mission banner (banner top y=96, disc radius ~43 px), so
+      // only a half-disc showed on the cover. At 120 the full disc clears
+      // the banner and sits in open sky above it.
       disc.visible = true;
       const viewDir = new THREE.Vector3();
       camera.getWorldDirection(viewDir);
       disc.position.copy(camera.position).addScaledVector(viewDir, 350);
-      disc.position.y = clock.golden ? 95 : 170;
+      disc.position.y = clock.golden ? 120 : 170;
       disc.lookAt(camera.position);
       disc.material.color.setHex(clock.golden ? 0xffc21a : 0xfff2b0);
     }
