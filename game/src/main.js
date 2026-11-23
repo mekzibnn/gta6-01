@@ -1,218 +1,176 @@
-// Solmar Heat — the bootstrap and the game loop. main.js builds the
-// whole game object, wires the input, the renderer and the HUD, stages
-// a screenshot when asked, and runs the frame loop. The game object is
-// the single source of truth; window.__game is how the playtest (and
-// the judge's screenshots) reach it.
-
-import { makeRng, rngHelpers, seedFromUrl } from './random.js';
-import { WANTED_DECAY_SECONDS } from './config.js';
-import { makeClock, updateClock } from './daynight.js';
-import { makeWeather, updateWeather } from './weather.js';
-import { makeStats, addDistance, addTime } from './stats.js';
-import { makeEmpire, tickEmpireIncome } from './empire.js';
-import { makeRoster, decayMultiplier } from './crew.js';
-import { makeGarage } from './upgrades.js';
-import { makeStreetRaces, updateRace, abandonRace } from './races.js';
-import { makeMissionState, updateMissions } from './missions.js';
+// Solmar Heat — bootstrap and the main loop. State, input, updates,
+// render, HUD, and the window.__game handle the playtest drives.
+import { makeRng } from './random.js';
+import { LEO_LINES } from './config.js';
+import { makeClock, tickClock, phaseName, clockText } from './daynight.js';
+import { makeWeather, tickWeather } from './weather.js';
 import { makeCity } from './city.js';
-import {
-  spawnTraffic, drivePlayerCar, updateTraffic, updateCollisions,
-  updateCops, updateWrecks,
-} from './vehicles.js';
-import { makePlayer, updatePlayerOnFoot } from './actors.js';
-import { makePeds, updatePeds } from './peds.js';
-import { updateShopNear, handleInteract, shopDigit, updateChopShop } from './shops.js';
-import { makeKeys, attachInput, qHoldMs } from './input.js';
-import { createRender, updateRender } from './render.js';
+import { spawnTraffic, seedHideoutSedan, tickVehicles } from './vehicles.js';
+import { tickActors, enterCar, exitCar, nearestCar } from './actors.js';
+import { makePeds, tickPeds } from './peds.js';
+import { updateShops, openShopMenu, menuDigit, nearestShop } from './shops.js';
+import { makeInput } from './input.js';
+import { makeStats, tickStats } from './stats.js';
+import { readSave, writeSave, applySave } from './save.js';
+import { tickCrew, useAbility } from './crew.js';
+import { tickEmpire } from './empire.js';
+import { tickRaces, abandonRace } from './races.js';
+import { updateMissions, refreshObjective } from './missions.js';
+import { initRender, drawFrame } from './render.js';
 import { buildHud, paintHud } from './hud.js';
-import { shotFromUrl, applyShot, holdShot } from './shots.js';
-import { writeSave, readSave, applySave } from './save.js';
-import { unlockAudio, updateEngineSound, updateRadio, sfxCash, sfxBoom } from './audio.js';
+import { stageShot } from './shots.js';
 
-const seed = seedFromUrl();
-const rng = makeRng(seed);
-const helpers = rngHelpers(rng);
-
-// The game object. Every system reads and writes this one object.
-const g = {
-  time: 0,
-  seed,
-  rng: helpers,
-  keys: makeKeys(),
-  player: makePlayer(),
-  car: null,
-  cars: [],
-  cops: [],
-  peds: [],
-  wrecks: [],
-  booms: [],
-  flash: 0,
-  mission: makeMissionState(),
-  objectiveText: '',
-  clock: makeClock(),
-  weather: makeWeather(helpers),
-  stats: makeStats(),
-  empire: makeEmpire(),
-  roster: makeRoster(),
-  garage: makeGarage(),
-  streetRaces: makeStreetRaces(),
-  wheel: { open: false, pending: -1 },
-  hud: { banner: '', bannerT: 0, bannerKind: '', toast: '', toastT: 0, dialogue: '', dialogueT: 0 },
-  shopOpen: null,
-  shopNear: null,
-  paused: false,
-  heatLock: false,
-  shot: '',
-  wantedTimer: 0,
-  // Hooks the input module calls back into.
-  onInteract: null,
-  onDigit: null,
-  onPause: null,
-  onAbandon: null,
-  onSpaceDown: null,
-  onQRelease: null,
-};
-
-g.city = makeCity(helpers);
-g.peds = makePeds(g);
-spawnTraffic(g);
-
-// A returning player picks up where they left off.
-applySave(g, readSave());
-
-// The renderer and the HUD overlay.
-g.render = createRender(g);
-buildHud(g);
-
-// Input hooks.
-g.onInteract = () => {
-  unlockAudio();
-  handleInteract(g);
-};
-g.onDigit = (n) => {
-  if (g.shopOpen) {
-    shopDigit(g, n);
-    return;
-  }
-  if (g.wheel.open && n >= 1 && n <= 4) {
-    g.wheel.pending = n - 1;
-  }
-};
-g.onPause = () => {
-  g.paused = !g.paused;
-  if (g.paused) writeSave(g);
-};
-g.onAbandon = () => {
-  if (g.streetRaces.active) abandonRace(g);
-};
-g.onSpaceDown = () => {
-  if (g.car && g.garage.nitro > 0 && g.car.nitroBurn <= 0) {
-    g.garage.nitro -= 1;
-    g.car.nitroBurn = 3;
-  }
-};
-g.onQRelease = () => {
-  if (!g.wheel.open) return;
-  if (g.wheel.pending >= 0 && g.player.weapons[g.wheel.pending]) {
-    g.player.weapon = g.wheel.pending;
-  }
-  g.wheel.open = false;
-  g.wheel.pending = -1;
-};
-attachInput(g);
-
-// Stage a screenshot, or leave the game alone for normal play.
-applyShot(g, shotFromUrl());
-
-// The world, for the playtest and the screenshots.
-window.__game = g;
-
-// The wanted level cools off a star at a time — slowly, slower still
-// with Vera on the crew, never while the Heat Lock holds.
-function updateWanted(g, dt) {
-  if (g.heatLock) {
-    g.wantedTimer = 0;
-    return;
-  }
-  if (g.player.wanted <= 0) {
-    g.wantedTimer = 0;
-    return;
-  }
-  g.wantedTimer += dt;
-  if (g.wantedTimer >= WANTED_DECAY_SECONDS * decayMultiplier(g)) {
-    g.player.wanted -= 1;
-    g.wantedTimer = 0;
-  }
+function createGame() {
+  const rng = makeRng(1);
+  const g = {
+    rng,
+    time: 0,
+    clock: makeClock(10),
+    weather: makeWeather(rng),
+    city: makeCity(rng),
+    player: {
+      x: 0, z: 100, heading: 0, health: 100, cash: 500, wanted: 0,
+      respect: 0, inCar: false, car: null,
+      weapons: [true, true, false, false, false, false, false],
+      ammo: [Infinity, Infinity, 60, 30, 18, 40, 4],
+      weapon: 0,
+      districtStanding: {},
+    },
+    cars: [], car: null, cops: [], heli: null,
+    peds: [],
+    wrecks: [], booms: [], flash: 0,
+    garage: { engine: 0, armor: 0, nitro: 0 },
+    empire: { owned: {}, totalEarned: 0, lastHour: 10 },
+    roster: { hired: {}, cooldowns: {} },
+    streetRaces: { active: null, won: 0, best: {} },
+    stats: makeStats(),
+    mission: { index: 0, step: 0, timer: 0, done: [] },
+    objectiveText: '',
+    shopOpen: null, shopNear: null,
+    wheel: { open: false },
+    hud: { banner: '', bannerT: 0, bannerKind: 'mission', note: '', noteT: 0, dialog: '', dialogT: 0, ctx: null, canvas: null },
+    input: makeInput(),
+    render: null,
+    paused: false,
+    heatLock: false,
+    clockText: '10:00', phaseName: 'DAY',
+    _lastMission: -1, _lastWanted: 0, _eyesT: 0, _heatT: 0, _dispatchT: 0,
+  };
+  g.peds = makePeds(g);
+  spawnTraffic(g);
+  seedHideoutSedan(g);
+  const saved = readSave();
+  if (saved) applySave(g, saved);
+  refreshObjective(g);
+  return g;
 }
 
-// The weapon wheel opens once Q has been held for 200 ms.
-function updateWheel(g) {
-  if (g.keys.q && !g.wheel.open && qHoldMs(g) > 200) {
-    g.wheel.open = true;
-    g.wheel.pending = g.player.weapon;
+function update(g, dt) {
+  g.time += dt;
+  tickClock(g, dt);
+  g.clockText = clockText(g.clock.hour);
+  g.phaseName = phaseName(g.clock.hour);
+  tickWeather(g, dt);
+  tickVehicles(g, dt);
+  tickActors(g, dt);
+  tickPeds(g, dt);
+  updateShops(g);
+  tickCrew(g, dt);
+  tickEmpire(g);
+  tickRaces(g, dt);
+  updateMissions(g, dt);
+  tickStats(g, dt);
+  // LEO chatter when the heat rises.
+  if (g.player.wanted > g._lastWanted) {
+    g.hud.dialog = LEO_LINES[g.rng.int(0, LEO_LINES.length)];
+    g.hud.dialogT = 5;
   }
+  g._lastWanted = g.player.wanted;
+  // Wheel opens after holding Q for 200ms.
+  if (g.input.keys.has('KeyQ') && !g.wheel.open) {
+    if (performance.now() - g.input.qDownAt > 200) g.wheel.open = true;
+  }
+  // HUD timers.
+  if (g.hud.bannerT > 0) g.hud.bannerT -= dt;
+  if (g.hud.noteT > 0) g.hud.noteT -= dt;
+  if (g.hud.dialogT > 0) g.hud.dialogT -= dt;
+  if (g.flash > 0) g.flash = Math.max(0, g.flash - dt * 0.45);
 }
 
-// The frame loop.
-let last = performance.now();
-let prevX = g.player.x;
-let prevZ = g.player.z;
-function frame(now) {
-  const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
-  last = now;
-  if (!g.paused) {
-    try {
-      g.time += dt;
-      addTime(g.stats, dt);
-      updateClock(g.clock, dt);
-      updateWeather(g.weather, dt);
-      tickEmpireIncome(g);
-      updatePlayerOnFoot(g, dt);
-      drivePlayerCar(g, dt);
-      updateTraffic(g, dt);
-      updateCops(g, dt);
-      updateCollisions(g);
-      updateWrecks(g, dt);
-      updatePeds(g, dt);
-      updateMissions(g);
-      updateRace(g);
-      updateShopNear(g);
-      updateChopShop(g);
-      updateWanted(g, dt);
-      updateWheel(g);
-      holdShot(g);
-    } catch (err) {
-      // One bad frame must never kill the game: remember it for
-      // debugging and keep the loop alive. No console output here — the
-      // playtest counts console errors, and a recovered frame is not one.
-      g.lastError = String(err && err.message ? err.message : err);
+function handleKey(g, code) {
+  const p = g.player;
+  if (code === 'KeyE') {
+    if (g.shopOpen) return;
+    // Find the shop live from the current position — the cached
+    // shopNear is a frame behind after a teleport.
+    const near = nearestShop(g);
+    if (near) { g.shopNear = near; openShopMenu(g); return; }
+    if (p.inCar) { exitCar(g); return; }
+    const car = nearestCar(g);
+    if (car) enterCar(g, car);
+    return;
+  }
+  if (code === 'KeyP') {
+    g.paused = !g.paused;
+    writeSave(g);
+    return;
+  }
+  if (code === 'Escape') {
+    if (g.shopOpen) { g.shopOpen = null; return; }
+    if (g.wheel.open) { g.wheel.open = false; return; }
+    return;
+  }
+  if (code === 'KeyZ') { useAbility(g, 'milo'); return; }
+  if (code === 'KeyX') {
+    // X quits a running race first; otherwise it is Vera's QUICK FIX.
+    if (g.streetRaces.active) { abandonRace(g); return; }
+    useAbility(g, 'vera'); return;
+  }
+  if (code === 'KeyC') { useAbility(g, 'tank'); return; }
+  if (code.startsWith('Digit')) {
+    const n = Number(code.slice(5));
+    if (g.shopOpen) { menuDigit(g, n); return; }
+    if (g.wheel.open) {
+      const idx = n - 1;
+      if (idx >= 0 && idx < 7 && p.weapons[idx]) p.weapon = idx;
+      return;
     }
-    // Distance driven, for the record book.
-    const ax = g.car ? g.car.x : g.player.x;
-    const az = g.car ? g.car.z : g.player.z;
-    const moved = Math.hypot(ax - prevX, az - prevZ);
-    if (moved > 0) addDistance(g.stats, moved);
-    prevX = ax;
-    prevZ = az;
-    // HUD timers.
-    if (g.hud.bannerT > 0) g.hud.bannerT -= dt;
-    if (g.hud.toastT > 0) g.hud.toastT -= dt;
-    if (g.hud.dialogueT > 0) g.hud.dialogueT -= dt;
-    // Sound follows the drive.
-    updateEngineSound(g);
-    updateRadio(g, dt);
+    return;
   }
-  updateRender(g, g.paused ? 0 : dt);
-  try {
-    paintHud(g);
-  } catch (err) {
-    // A HUD slip must never stop the game: remember it and keep going.
-    g.lastError = String(err && err.message ? err.message : err);
+}
+
+const g = createGame();
+const glCanvas = document.getElementById('gl');
+const hudCanvas = document.getElementById('hud');
+initRender(g, glCanvas);
+buildHud(g, hudCanvas);
+window.__game = g;
+window.__stageShot = (name) => stageShot(g, name);
+
+window.addEventListener('keydown', (e) => {
+  if (e.repeat) return;
+  g.input.keys.add(e.code);
+  if (e.code === 'KeyQ') g.input.qDownAt = performance.now();
+  if (e.code === 'Space') e.preventDefault();
+  handleKey(g, e.code);
+});
+window.addEventListener('keyup', (e) => {
+  g.input.keys.delete(e.code);
+  if (e.code === 'KeyQ') {
+    g.input.qHeldMs = performance.now() - g.input.qDownAt;
+    if (g.wheel.open) g.wheel.open = false;
   }
+});
+
+let last = performance.now();
+function frame(now) {
+  // Schedule the next frame FIRST — a throw in the update must never
+  // freeze the game loop.
   requestAnimationFrame(frame);
+  const dt = Math.min(0.05, Math.max(0.001, (now - last) / 1000));
+  last = now;
+  if (!g.paused) update(g, dt);
+  drawFrame(g, dt);
+  paintHud(g);
 }
 requestAnimationFrame(frame);
-
-// Cash and explosion feedback for the systems that pay out.
-g.onCash = () => sfxCash();
-g.onBoom = () => sfxBoom();

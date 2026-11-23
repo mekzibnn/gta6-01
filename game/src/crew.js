@@ -1,55 +1,42 @@
-// The crew. Three mates, each with a hire price and an effect the game
-// really applies: Milo sharpens the handling, Vera slows the heat decay,
-// Tank hardens every hit. A hired mate also knocks 10% off the garage.
+// Crew — roster perks and the Z / X / C abilities.
+import { CREW } from './config.js';
 
-import { CREW, CREW_DISCOUNT } from './config.js';
-
-export function makeRoster() {
-  return { hired: {} };
-}
-
-// The price of a mate, with the crew discount never stacking on itself.
-export function crewPrice(id) {
-  return CREW[id].price;
-}
-
-// Hire a mate: pay, mark them active, and return true. Fails when the
-// player cannot afford them or already has them.
-export function hireMate(g, id) {
-  const mate = CREW[id];
-  if (!mate) return false;
-  if (g.roster.hired[id]) return false;
-  if (g.player.cash < mate.price) return false;
-  g.player.cash -= mate.price;
-  g.roster.hired[id] = { active: true, hiredAt: g.time };
-  return true;
-}
-
-// The handling multiplier the car gets: Milo adds a quarter.
-export function handlingMultiplier(g) {
-  return g.roster.hired.milo ? 1.25 : 1;
-}
-
-// The wanted-decay multiplier: Vera stretches each star out 1.6x.
-export function decayMultiplier(g) {
-  return g.roster.hired.vera ? 1.6 : 1;
-}
-
-// The damage multiplier: Tank lands half again as hard.
-export function damageMultiplier(g) {
-  return g.roster.hired.tank ? 1.5 : 1;
-}
-
-// The garage discount: any hired mate takes 10% off.
-export function hasCrewDiscount(g) {
+export function hasCrew(g) {
   return Object.keys(g.roster.hired).length > 0;
 }
-
-export function discounted(price, g) {
-  return hasCrewDiscount(g) ? Math.round(price * CREW_DISCOUNT) : price;
+export function crewPrice(g, id) {
+  const c = CREW.find((x) => x.id === id);
+  return c ? c.price : 0;
 }
 
-// The mates the HUD shows as ability cards.
-export function hiredMates(g) {
-  return Object.keys(g.roster.hired).map((id) => CREW[id]);
+export function tickCrew(g, dt) {
+  const cds = g.roster.cooldowns;
+  for (const k of Object.keys(cds)) {
+    cds[k] -= dt;
+    if (cds[k] <= 0) delete cds[k];
+  }
+  if (g._eyesT > 0) g._eyesT -= dt;
+}
+
+export function useAbility(g, id) {
+  if (!g.roster.hired[id]) return false;
+  if (g.roster.cooldowns[id] > 0) return false;
+  if (id === 'milo') {
+    // SWAP PLATES — sheds a star of heat.
+    if (g.player.wanted <= 0) return false;
+    g.player.wanted = Math.max(0, g.player.wanted - 1);
+    g.roster.cooldowns[id] = 30;
+  } else if (id === 'vera') {
+    // QUICK FIX — patches the car back up.
+    if (!g.car) return false;
+    g.car.health = Math.min(g.car.maxHealth, g.car.health + 30);
+    g.roster.cooldowns[id] = 20;
+  } else if (id === 'tank') {
+    // EYES OUT — the KPD loses the trail for a while.
+    g._eyesT = 12;
+    g.roster.cooldowns[id] = 25;
+  }
+  g.hud.note = `${CREW.find((c) => c.id === id).ability} — ${CREW.find((c) => c.id === id).name}`;
+  g.hud.noteT = 2;
+  return true;
 }

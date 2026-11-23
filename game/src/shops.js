@@ -1,146 +1,136 @@
-// The shops. Stand near a storefront and the HUD names it; press E and
-// the menu opens; a number key buys. The garage sells engine, armour and
-// nitro; the ventures sell the businesses; the Crew Office hires mates;
-// the Race Office starts the series; the Gun Store unlocks weapon slots.
-// The Chop Shop needs no key: drive a car into it and it is sold.
+// Shops — proximity prompts and the four menus (garage, empire, crew,
+// races) plus the gun store. A purchase always closes its menu.
+import { BUSINESSES, CREW, WEAPONS, RACES, ENGINE_PRICES, ARMOR_PRICES, NITRO_PRICE, NITRO_MAX } from './config.js';
 
-import { BUSINESSES, CAR_MODELS } from './config.js';
-import { buyBusiness } from './empire.js';
-import { hireMate } from './crew.js';
-import { buyEngine, buyArmor, buyNitro } from './upgrades.js';
-import { startRace } from './races.js';
-import { nearestCar, enterCar, exitCar } from './actors.js';
+export const SHOPS = [
+  { id: 'garage', label: 'Garage', x: 80, z: 80, kind: 'garage' },
+  { id: 'laundry', label: 'Solmar Laundry', x: -60, z: 60, kind: 'venture' },
+  { id: 'gunstore', label: 'Gun Store', x: 148, z: 148, kind: 'weapons' },
+  { id: 'crew', label: 'Crew Office', x: -24, z: -196, kind: 'crew' },
+  { id: 'race', label: 'Race Office', x: 150, z: 0, kind: 'races' },
+];
 
-// How close the player must stand for a storefront to notice them.
-const SHOP_RANGE = 11;
-
-// Refresh shopNear from the player's position. Called every frame.
-export function updateShopNear(g) {
-  let best = null;
-  let bestD = SHOP_RANGE * SHOP_RANGE;
-  for (const s of g.city.shopSpots) {
-    const dx = s.x - g.player.x;
-    const dz = s.z - g.player.z;
-    const d2 = dx * dx + dz * dz;
-    if (d2 < bestD) {
-      bestD = d2;
-      best = s;
-    }
+// The nearest shop within 10 units of the player, or null. Computed
+// live so a keypress right after a teleport still finds the right shop.
+export function nearestShop(g) {
+  let best = null, bestD = 10;
+  for (const s of SHOPS) {
+    const d = Math.hypot(s.x - g.player.x, s.z - g.player.z);
+    if (d < bestD) { bestD = d; best = s; }
   }
-  g.shopNear = best ? { label: best.label, kind: best.kind, business: best.business || null, x: best.x, z: best.z } : null;
+  return best ? { label: best.label, id: best.id, kind: best.kind, x: best.x, z: best.z } : null;
 }
 
-// E does the context thing: close an open menu, open a storefront, or
-// get in or out of a car. The storefront is recomputed from the live
-// position here, not read from the frame's cached shopNear: the
-// playtest teleports the player and presses E in the same breath, and
-// a stale cached prompt would open the wrong menu.
-export function handleInteract(g) {
-  if (g.shopOpen) {
-    g.shopOpen = null;
-    return;
-  }
-  updateShopNear(g);
-  const near = g.shopNear;
-  if (near && near.kind !== 'chop') {
-    g.shopOpen = { kind: near.kind, business: near.business || null, label: near.label };
-    return;
-  }
-  if (g.player.inCar) {
-    exitCar(g);
-    return;
-  }
-  const car = nearestCar(g, 5);
-  if (car) enterCar(g, car);
+export function updateShops(g) {
+  g.shopNear = nearestShop(g);
+  if (g.shopOpen && g.shopNear && g.shopOpen.shopId !== g.shopNear.id) g.shopOpen = null;
+  if (g.shopOpen && !g.shopNear) g.shopOpen = null;
 }
 
-// A number key while a menu is open. Returns true when it did something.
-export function shopDigit(g, digit) {
-  const open = g.shopOpen;
-  if (!open) return false;
-  if (open.kind === 'garage') {
-    let bought = false;
-    if (digit === 1) bought = buyEngine(g);
-    else if (digit === 2) bought = buyArmor(g);
-    else if (digit === 3) bought = buyNitro(g);
-    if (bought) {
-      g.shopOpen = null;
-      g.hud.toast = 'Garage upgrade fitted';
-      g.hud.toastT = 2;
-    }
-    return bought;
-  }
-  if (open.kind === 'venture') {
-    const bought = buyBusiness(g, open.business);
-    if (bought) {
-      g.shopOpen = null;
-      const biz = BUSINESSES[open.business];
-      g.hud.toast = `${biz.name} is yours — $${biz.income}/hr`;
-      g.hud.toastT = 3;
-    }
-    return bought;
-  }
-  if (open.kind === 'crew') {
-    const ids = ['milo', 'vera', 'tank'];
-    const id = ids[digit - 1];
-    if (!id) return false;
-    const hired = hireMate(g, id);
-    if (hired) {
-      g.shopOpen = null;
-      g.hud.toast = `${id[0].toUpperCase() + id.slice(1)} joined the crew`;
-      g.hud.toastT = 2.5;
-    }
-    return hired;
-  }
-  if (open.kind === 'races') {
-    const ids = ['drag', 'sprint', 'circuit'];
-    const id = ids[digit - 1];
-    if (!id) return false;
-    const started = startRace(g, id);
-    if (started) {
-      g.shopOpen = null;
-      g.hud.toast = 'Race started — hit the gates in order';
-      g.hud.toastT = 2.5;
-    }
-    return started;
-  }
-  if (open.kind === 'guns') {
-    const slots = [1, 2, 3];
-    const slot = slots[digit - 1];
-    if (slot === undefined) return false;
-    const prices = [400, 900, 1400];
-    if (g.player.weapons[slot]) return false;
-    if (g.player.cash < prices[digit - 1]) return false;
-    g.player.cash -= prices[digit - 1];
-    g.player.weapons[slot] = true;
+export function openShopMenu(g) {
+  if (!g.shopNear) return false;
+  g.shopOpen = { kind: g.shopNear.kind, shopId: g.shopNear.id, label: g.shopNear.label };
+  return true;
+}
+
+function crewDiscount(g) {
+  return Object.keys(g.roster.hired).length > 0 ? 0.9 : 1;
+}
+function pay(g, amount) {
+  if (g.player.cash < amount) { g.hud.note = 'Not enough cash'; g.hud.noteT = 2; return false; }
+  g.player.cash -= amount;
+  return true;
+}
+
+// Digit key while a menu is open. Returns true when the menu handled it.
+export function menuDigit(g, digit) {
+  const m = g.shopOpen;
+  if (!m) return false;
+  if (digit === 4 && m.kind !== 'venture' && m.kind !== 'races') { g.shopOpen = null; return true; }
+  if (m.kind === 'garage') return garageDigit(g, digit);
+  if (m.kind === 'venture') return ventureDigit(g, digit);
+  if (m.kind === 'crew') return crewDigit(g, digit);
+  if (m.kind === 'races') return racesDigit(g, digit);
+  if (m.kind === 'weapons') return weaponsDigit(g, digit);
+  return false;
+}
+
+function garageDigit(g, digit) {
+  if (digit === 1) {
+    const next = g.garage.engine + 1;
+    if (next >= ENGINE_PRICES.length) return true;
+    const price = Math.round(ENGINE_PRICES[next] * crewDiscount(g));
+    if (!pay(g, price)) return true;
+    g.garage.engine = next;
     g.shopOpen = null;
-    g.hud.toast = 'Weapon unlocked';
-    g.hud.toastT = 2;
+    return true;
+  }
+  if (digit === 2) {
+    if (g.garage.nitro >= NITRO_MAX) return true;
+    if (!pay(g, NITRO_PRICE)) return true;
+    g.garage.nitro += 1;
+    g.shopOpen = null;
+    return true;
+  }
+  if (digit === 3) {
+    const next = g.garage.armor + 1;
+    if (next >= ARMOR_PRICES.length) return true;
+    const price = Math.round(ARMOR_PRICES[next] * crewDiscount(g));
+    if (!pay(g, price)) return true;
+    g.garage.armor = next;
+    g.shopOpen = null;
     return true;
   }
   return false;
 }
 
-// The Chop Shop: drive a car into the yard and it is sold on the spot.
-// The payout follows the model, and the player walks away on foot.
-export function updateChopShop(g) {
-  if (!g.car) return;
-  const spot = g.city.spots.chopShop;
-  const dx = g.car.x - spot.x;
-  const dz = g.car.z - spot.z;
-  if (dx * dx + dz * dz > 100) return;
-  const car = g.car;
-  const def = CAR_MODELS[car.model] || CAR_MODELS.sedan;
-  const value = { sedan: 300, sport: 1200, taxi: 250, truck: 400, cop: 0 }[car.model] ?? 300;
-  const payout = Math.max(150, Math.round(value * (car.health / car.maxHealth)));
-  g.player.cash += payout;
-  const idx = g.cars.indexOf(car);
-  if (idx >= 0) g.cars.splice(idx, 1);
-  g.player.inCar = false;
-  g.player.x = spot.x + 6;
-  g.player.z = spot.z + 6;
-  g.car = null;
-  g.hud.toast = `Chop Shop paid $${payout}`;
-  g.hud.toastT = 3;
-  void def;
+function ventureDigit(g, digit) {
+  const b = BUSINESSES[digit - 1];
+  if (!b) { if (digit === 5) g.shopOpen = null; return true; }
+  const owned = g.empire.owned[b.id];
+  const price = owned ? b.price * (owned.level + 1) : b.price;
+  if (!pay(g, price)) return true;
+  if (owned) owned.level += 1;
+  else g.empire.owned[b.id] = { level: 1 };
+  g.shopOpen = null;
+  return true;
+}
+
+function crewDigit(g, digit) {
+  const c = CREW[digit - 1];
+  if (!c) return true;
+  if (g.roster.hired[c.id]) return true;
+  if (!pay(g, c.price)) return true;
+  g.roster.hired[c.id] = { active: true, level: 1 };
+  g.shopOpen = null;
+  return true;
+}
+
+function racesDigit(g, digit) {
+  const r = RACES[digit - 1];
+  if (!r) { if (digit === 4) g.shopOpen = null; return true; }
+  if (g.player.cash < r.fee) { g.hud.note = 'Not enough cash'; g.hud.noteT = 2; return true; }
+  g.player.cash -= r.fee;
+  g.streetRaces.active = { id: r.id, gate: 0, t: 0 };
+  g.shopOpen = null;
+  return true;
+}
+
+function weaponsDigit(g, digit) {
+  const idx = [1, 3, 4, 5, 6][digit - 1];
+  if (digit === 6) {
+    // Ammo refill for everything owned.
+    if (!pay(g, 200)) return true;
+    g.player.ammo = WEAPONS.map((w) => w.ammo);
+    g.shopOpen = null;
+    return true;
+  }
+  if (digit === 7) { g.shopOpen = null; return true; }
+  if (idx === undefined) return true;
+  const w = WEAPONS[idx];
+  if (g.player.weapons[idx]) return true;
+  if (!pay(g, w.price)) return true;
+  g.player.weapons[idx] = true;
+  g.shopOpen = null;
+  return true;
 }

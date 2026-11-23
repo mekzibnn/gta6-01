@@ -1,83 +1,55 @@
-// Save and load. The save lives in localStorage under the v2 key and
-// holds everything a returning player needs: cash, the mission, the
-// empire, the roster, the race series, the district standing and the
-// garage. It is written when the game pauses and loaded on start.
-
+// Save / load for Solmar Heat — localStorage key 'solmar-heat.save.v2'.
 import { SAVE_KEY } from './config.js';
 
-// Gather the saveable slice of the game object into a plain object.
-export function buildSave(g) {
-  return {
-    version: 2,
-    cash: g.player.cash,
-    wanted: g.player.wanted,
-    health: g.player.health,
-    respect: g.player.respect,
-    mission: { index: g.mission.index, done: [...g.mission.done] },
-    empire: {
-      owned: JSON.parse(JSON.stringify(g.empire.owned)),
-      totalEarned: g.empire.totalEarned,
-    },
-    roster: { hired: JSON.parse(JSON.stringify(g.roster.hired)) },
-    streetRaces: {
-      won: g.streetRaces.won,
-      best: { ...g.streetRaces.best },
-    },
-    districtStanding: { ...g.player.districtStanding },
-    garage: { ...g.garage },
-    clockHour: g.clock.hour,
-    stats: { ...g.stats },
-  };
-}
-
-// Write the save. Returns true when it landed.
 export function writeSave(g) {
   try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify(buildSave(g)));
+    const s = {
+      v: 2,
+      player: {
+        cash: g.player.cash, health: g.player.health, wanted: g.player.wanted,
+        weapon: g.player.weapon, weapons: g.player.weapons.slice(),
+        ammo: JSON.parse(JSON.stringify(g.player.ammo)),
+        districtStanding: { ...g.player.districtStanding },
+        respect: g.player.respect,
+        x: g.player.x, z: g.player.z,
+      },
+      mission: { index: g.mission.index, step: g.mission.step, done: g.mission.done.slice() },
+      garage: { ...g.garage },
+      empire: { owned: JSON.parse(JSON.stringify(g.empire.owned)), totalEarned: g.empire.totalEarned },
+      roster: { hired: JSON.parse(JSON.stringify(g.roster.hired)) },
+      streetRaces: { won: g.streetRaces.won, best: { ...g.streetRaces.best } },
+      districtStanding: { ...g.player.districtStanding },
+      stats: { ...g.stats },
+      clockHour: g.clock.hour,
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(s));
     return true;
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 
-// Read the save back, or null when there is none or it is corrupt.
 export function readSave() {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
-    const data = JSON.parse(raw);
-    if (!data || data.version !== 2) return null;
-    return data;
-  } catch {
-    return null;
-  }
+    const s = JSON.parse(raw);
+    return s && s.v === 2 ? s : null;
+  } catch { return null; }
 }
 
-// Apply a loaded save onto a fresh game object. Only the fields the save
-// owns are touched; the world itself is rebuilt from the seed.
-export function applySave(g, data) {
-  if (!data) return;
-  g.player.cash = data.cash ?? g.player.cash;
-  g.player.wanted = data.wanted ?? 0;
-  g.player.health = data.health ?? 100;
-  g.player.respect = data.respect ?? 0;
-  if (data.mission) {
-    g.mission.index = data.mission.index ?? 0;
-    g.mission.done = [...(data.mission.done ?? [])];
-  }
-  if (data.empire) {
-    g.empire.owned = data.empire.owned ?? {};
-    g.empire.totalEarned = data.empire.totalEarned ?? 0;
-  }
-  if (data.roster) g.roster.hired = data.roster.hired ?? {};
-  if (data.streetRaces) {
-    g.streetRaces.won = data.streetRaces.won ?? 0;
-    g.streetRaces.best = data.streetRaces.best ?? {};
-  }
-  if (data.districtStanding) {
-    Object.assign(g.player.districtStanding, data.districtStanding);
-  }
-  if (data.garage) Object.assign(g.garage, data.garage);
-  if (typeof data.clockHour === 'number') g.clock.hour = data.clockHour;
-  if (data.stats) Object.assign(g.stats, data.stats);
+export function applySave(g, s) {
+  if (!s) return;
+  Object.assign(g.player, {
+    cash: s.player.cash, health: s.player.health, wanted: 0,
+    weapon: s.player.weapon, weapons: s.player.weapons.slice(),
+    ammo: s.player.ammo, respect: s.player.respect,
+  });
+  g.player.districtStanding = { ...g.player.districtStanding, ...s.player.districtStanding };
+  g.mission.index = s.mission.index; g.mission.step = s.mission.step;
+  g.mission.done = s.mission.done.slice();
+  Object.assign(g.garage, s.garage);
+  g.empire.owned = s.empire.owned; g.empire.totalEarned = s.empire.totalEarned;
+  g.roster.hired = s.roster.hired;
+  g.streetRaces.won = s.streetRaces.won; g.streetRaces.best = s.streetRaces.best;
+  Object.assign(g.stats, s.stats);
+  g.clock.hour = s.clockHour;
 }

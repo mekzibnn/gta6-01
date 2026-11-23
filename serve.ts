@@ -1,35 +1,27 @@
-// A tiny static server for playing Solmar Heat in desktop Chrome.
-// Serves game/ at http://localhost:8080 — open that URL and the game
-// loads straight from the files, no build step. Node's standard library
-// only; nothing to install.
-//
-// Run it:  node serve.ts
-// Then open http://localhost:8080 in Chrome.
-
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const here = fileURLToPath(new URL('.', import.meta.url));
-const gameDir = join(here, 'game');
-const PORT = 8080;
+const root = fileURLToPath(new URL('.', import.meta.url));
 
-const types = {
-  '.html': 'text/html',
-  '.js': 'text/javascript',
-  '.mjs': 'text/javascript',
-  '.css': 'text/css',
-  '.json': 'application/json',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-};
+function mimeFor(path) {
+  const ext = extname(path);
+  if (ext === '.html') return 'text/html';
+  if (ext === '.js' || ext === '.mjs') return 'text/javascript';
+  if (ext === '.css') return 'text/css';
+  if (ext === '.json') return 'application/json';
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.png') return 'image/png';
+  return 'application/octet-stream';
+}
 
 const server = createServer(async (req, res) => {
-  const path = req.url.split('?')[0] === '/' ? '/index.html' : req.url.split('?')[0];
+  const raw = req.url.split('?')[0];
+  const path = raw === '/' ? '/index.html' : raw;
   try {
-    const data = await readFile(join(gameDir, decodeURIComponent(path)));
-    res.writeHead(200, { 'content-type': types[extname(path)] ?? 'application/octet-stream' });
+    const data = await readFile(join(root, 'game', path));
+    res.writeHead(200, { 'Content-Type': mimeFor(path) });
     res.end(data);
   } catch {
     res.writeHead(404);
@@ -37,6 +29,6 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`Solmar Heat at http://localhost:${PORT}`);
+server.listen(8126, () => {
+  console.log('Solmar Heat at http://localhost:8126');
 });

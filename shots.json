@@ -1,1 +1,1 @@
-{"shots":[{"file":"1-cover.jpg","name":"cover","query":"?shot=cover&seed=1"},{"file":"2-drive.jpg","name":"drive","query":"?shot=drive&seed=1"},{"file":"3-mission.jpg","name":"mission","query":"?shot=mission&seed=1"},{"file":"4-night.jpg","name":"night","query":"?shot=night&seed=1"}]}
+{"shots":[{"file":"1-cover.jpg","name":"cover"},{"file":"2-drive.jpg","name":"drive"},{"file":"3-mission.jpg","name":"mission"},{"file":"4-night.jpg","name":"night"}]}

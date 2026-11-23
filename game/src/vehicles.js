@@ -1,297 +1,216 @@
-// The cars. Traffic, the player's ride, the KPD units and the wrecks
-// they leave behind. Every car carries a unique id (nextId++), a model,
-// a position, a heading, a speed and a health bar. A car whose health
-// reaches zero explodes into a persistent burning wreck, and the blast
-// can chain into the cars around it.
+// Cars — spawning, traffic, driving physics, collisions, explosions
+// and persistent burning wrecks. Every car carries a unique id.
+import { makeRng } from './random.js';
 
-import { CAR_MODELS, COPS_PER_STAR, MAX_COPS } from './config.js';
-import { armorSoak } from './upgrades.js';
-import { handlingMultiplier } from './crew.js';
-import { buildingPush } from './city.js';
+let nextCarId = 1;
 
-let nextId = 1;
+const MODELS = [
+  { model: 'sedan', color: 0xd94f3d, top: 40 },
+  { model: 'sport', color: 0xffc21a, top: 52 },
+  { model: 'taxi', color: 0xffd23f, top: 42 },
+  { model: 'coupe', color: 0x4cc9f0, top: 46 },
+  { model: 'van', color: 0x8ecae6, top: 34 },
+  { model: 'muscle', color: 0x9b5de5, top: 48 },
+];
 
-// Make a car object. Health is the condition percent the HUD shows.
-export function makeCar(g, model, x, z, heading) {
-  const def = CAR_MODELS[model] || CAR_MODELS.sedan;
+export function makeCar(rng, modelName, x, z, heading) {
+  const def = MODELS.find((m) => m.model === modelName) || MODELS[0];
   return {
-    id: nextId++,
-    model,
-    name: def.name,
-    x, z, heading,
-    speed: 0,
-    health: 100,
-    maxHealth: 100,
-    color: def.color,
-    exploded: false,
-    nitroBurn: 0,
-    // Traffic state: which street it cruises and which way.
-    streetAxis: 'x',
-    streetLine: 0,
-    streetDir: 1,
-    cruise: 10,
+    id: nextCarId++,
+    model: def.model, color: def.color, topSpeed: def.top,
+    x, z, heading, speed: 0,
+    health: 100, maxHealth: 100,
+    exploded: false, nitroBurn: 0, burnT: 0,
+    traffic: false, waypoint: 0, route: null,
+    hitCool: 0, stuckT: 0,
   };
 }
 
-// Spawn the traffic and the parked cars: the sedan at the hideout (the
-// first car the player steals), a sport car nearby for mission 2, and
-// the traffic cruising the grid.
 export function spawnTraffic(g) {
-  const hideout = g.city.spots.hideout;
-  const sedan = makeCar(g, 'sedan', hideout.x + 6, hideout.z + 4, 0);
-  sedan.cruise = 0;
-  g.cars.push(sedan);
-  const sport = makeCar(g, 'sport', hideout.x + 20, hideout.z - 6, 0.5);
-  sport.cruise = 0;
+  const rng = g.rng;
+  const roads = [];
+  for (const x of g.city.avenues) roads.push({ axis: 'x', at: x });
+  for (const z of g.city.streets) roads.push({ axis: 'z', at: z });
+  for (let i = 0; i < 11; i += 1) {
+    const road = rng.pick(roads);
+    const along = rng.range(-160, 160);
+    const x = road.axis === 'x' ? road.at + rng.range(-3, 3) : along;
+    const z = road.axis === 'z' ? road.at + rng.range(-3, 3) : along;
+    const def = rng.pick(MODELS);
+    const c = makeCar(rng, def.model, x, z, rng.pick([0, Math.PI / 2, Math.PI, -Math.PI / 2]));
+    c.traffic = true;
+    c.speed = rng.range(10, 16);
+    c.route = road;
+    g.cars.push(c);
+  }
+  // One sport car parked near the Marina so the city always has one.
+  const sport = makeCar(rng, 'sport', -120, 30, Math.PI / 2);
   g.cars.push(sport);
-  const models = ['sedan', 'taxi', 'sedan', 'truck', 'sedan', 'taxi', 'sport'];
-  for (let i = 0; i < 14; i += 1) {
-    const model = models[i % models.length];
-    const axis = g.rng.chance(0.5) ? 'x' : 'z';
-    const line = g.rng.pick([-180, -120, -60, 0, 60, 120, 180]);
-    const along = g.rng.range(-180, 180);
-    const car = makeCar(g, model, axis === 'x' ? line : along, axis === 'x' ? along : line, axis === 'x' ? 0 : Math.PI / 2);
-    car.streetAxis = axis;
-    car.streetLine = line;
-    car.streetDir = g.rng.chance(0.5) ? 1 : -1;
-    car.cruise = g.rng.range(8, 14);
-    car.speed = car.cruise;
-    g.cars.push(car);
-  }
 }
 
-// The player's car, or null when on foot.
-export function playerCar(g) {
-  return g.car;
+export function seedHideoutSedan(g) {
+  const h = g.city.hideout;
+  const sedan = makeCar(g.rng, 'sedan', h.x + 4, h.z, 0);
+  sedan.hideout = true;
+  g.cars.unshift(sedan);
+  return sedan;
 }
 
-// Drive the player's car with the keys. W/S are throttle and brake,
-// A/D steer (sharper with Milo), Space burns a nitro charge.
-export function drivePlayerCar(g, dt) {
-  const car = g.car;
-  if (!car) return;
-  const keys = g.keys;
-  const def = CAR_MODELS[car.model] || CAR_MODELS.sedan;
-  const engineBonus = g.garage.engine * 4;
-  const nitro = car.nitroBurn > 0 ? 15 : 0;
-  const maxSpeed = def.maxSpeed + engineBonus + nitro;
-  const accel = def.accel * (car.nitroBurn > 0 ? 2 : 1);
-  if (keys.w) car.speed += accel * dt;
-  if (keys.s) car.speed -= accel * 1.4 * dt;
-  if (!keys.w && !keys.s) car.speed *= Math.max(0, 1 - dt * 0.8);
-  car.speed = Math.max(-9, Math.min(maxSpeed, car.speed));
-  const steer = (keys.a ? 1 : 0) - (keys.d ? 1 : 0);
-  if (steer !== 0 && Math.abs(car.speed) > 0.5) {
-    car.heading += steer * 1.9 * handlingMultiplier(g) * dt * Math.sign(car.speed);
-  }
-  car.x += Math.sin(car.heading) * car.speed * dt;
-  car.z += Math.cos(car.heading) * car.speed * dt;
-  if (car.nitroBurn > 0) car.nitroBurn -= dt;
-  // The rider rides along: the player's position is the car's, so the
-  // shop prompts, the district widget and the mission checks all read
-  // where the car actually is.
-  g.player.x = car.x;
-  g.player.z = car.z;
-  g.player.heading = car.heading;
-  // Stay inside the city and out of the buildings.
-  car.x = Math.max(-205, Math.min(205, car.x));
-  car.z = Math.max(-205, Math.min(205, car.z));
-  const push = buildingPush(g.city, car.x, car.z, 2.5);
-  if (push) {
-    car.x = push.x;
-    car.z = push.z;
-    car.speed *= 0.4;
-    if (Math.abs(car.speed) > 12) damageCar(g, car, 8);
-  }
+// A fresh sedan waits at the hideout whenever the player is on foot and
+// the old one is gone — the street series always has a car to steal.
+export function refreshHideoutSedan(g) {
+  if (g.player.inCar) return;
+  const h = g.city.hideout;
+  const ok = g.cars.some((c) => c.hideout && !c.exploded
+    && Math.hypot(c.x - h.x, c.z - h.z) < 30);
+  if (!ok) seedHideoutSedan(g);
 }
 
-// Move the traffic along its street. At the edge of town it turns
-// around and cruises back.
-export function updateTraffic(g, dt) {
-  for (const car of g.cars) {
-    if (car === g.car) continue;
-    if (car.cruise <= 0) continue;
-    car.speed = car.cruise;
-    if (car.streetAxis === 'x') {
-      car.z += car.streetDir * car.speed * dt;
-      car.heading = car.streetDir > 0 ? 0 : Math.PI;
-      if (car.z > 200 || car.z < -200) car.streetDir *= -1;
-    } else {
-      car.x += car.streetDir * car.speed * dt;
-      car.heading = car.streetDir > 0 ? Math.PI / 2 : -Math.PI / 2;
-      if (car.x > 200 || car.x < -200) car.streetDir *= -1;
-    }
-  }
+// Chop shop — drive a car in and it is sold on the spot; the player
+// walks away on foot with the cash.
+export function checkChopShop(g) {
+  const c = g.car;
+  if (!c || !g.player.inCar) return;
+  const s = g.city.spots.chopShop;
+  if (!s) return;
+  if (Math.hypot(s.x - c.x, s.z - c.z) >= 12) return;
+  const price = Math.round(200 + c.topSpeed * 5 * (c.health / c.maxHealth));
+  g.player.cash += price;
+  g.stats.stolen = Math.max(0, g.stats.stolen);
+  const idx = g.cars.indexOf(c);
+  if (idx >= 0) g.cars.splice(idx, 1);
+  g.car = null;
+  g.player.car = null;
+  g.player.inCar = false;
+  g.hud.note = `Chop shop paid $${price} for the ${c.model}`;
+  g.hud.noteT = 3;
 }
 
-// Car-to-car collisions. A hard hit damages both cars and shoves them
-// apart; a car at zero health explodes.
-export function updateCollisions(g) {
-  const cars = g.cars;
-  for (let i = 0; i < cars.length; i += 1) {
-    for (let j = i + 1; j < cars.length; j += 1) {
-      const a = cars[i];
-      const b = cars[j];
-      if (a.exploded || b.exploded) continue;
-      const dx = b.x - a.x;
-      const dz = b.z - a.z;
-      const d2 = dx * dx + dz * dz;
-      if (d2 >= 25 || d2 === 0) continue;
-      const d = Math.sqrt(d2);
-      const rel = Math.abs(a.speed - b.speed);
-      const nx = dx / d;
-      const nz = dz / d;
-      // Shove them apart so the hit only lands once.
-      const push = (5 - d) / 2;
-      a.x -= nx * push;
-      a.z -= nz * push;
-      b.x += nx * push;
-      b.z += nz * push;
-      if (rel > 5) {
-        // A sustained overlap (a traffic car grinding against the
-        // player's parked car) must not drain health every frame: one
-        // hit per pair per 0.6 s, then the shove separates them.
-        if (a.lastHit === undefined) a.lastHit = -10;
-        if (b.lastHit === undefined) b.lastHit = -10;
-        if (g.time - a.lastHit > 0.6 && g.time - b.lastHit > 0.6) {
-          const dmg = rel * 1.5;
-          damageCar(g, a, dmg);
-          damageCar(g, b, dmg);
-          a.lastHit = g.time;
-          b.lastHit = g.time;
-        }
-      }
-    }
-  }
-  // Cops ram the player's car.
-  if (g.car) {
-    for (const cop of g.cops) {
-      const dx = g.car.x - cop.x;
-      const dz = g.car.z - cop.z;
-      const d2 = dx * dx + dz * dz;
-      if (d2 < 25 && d2 > 0.01) {
-        const rel = Math.abs(g.car.speed - cop.speed);
-        if (rel > 6) {
-          if (g.car.lastHit === undefined) g.car.lastHit = -10;
-          if (g.time - g.car.lastHit > 0.6) {
-            damageCar(g, g.car, rel * 1.2);
-            g.car.lastHit = g.time;
-          }
-        }
-        const d = Math.sqrt(d2);
-        g.car.x += (dx / d) * 1.5;
-        g.car.z += (dz / d) * 1.5;
-      }
-    }
-  }
+function damageCar(g, car, amount) {
+  if (car.exploded) return;
+  const armor = g.player.inCar && g.car === car ? g.garage.armor : 0;
+  car.health -= amount * (1 - 0.2 * armor);
+  if (car.health <= 0) explodeCar(g, car);
 }
 
-// Damage a car, soaking through the player's armour. At zero health it
-// explodes.
-export function damageCar(g, car, amount) {
-  if (!car || car.exploded) return;
-  let dmg = amount;
-  if (car === g.car) dmg *= 1 - armorSoak(g);
-  car.health -= dmg;
-  if (car.health <= 0) {
-    car.health = 0;
-    explodeCar(g, car);
-  }
-}
-
-// A car explodes: a burning wreck stays on the road, the screen flashes,
-// a boom rings out, and the blast hurts whatever is close. If the
-// player was inside, they are thrown out on foot and hurt.
 export function explodeCar(g, car) {
-  if (!car || car.exploded) return;
+  if (car.exploded) return;
   car.exploded = true;
-  g.wrecks.push({ x: car.x, z: car.z, model: car.model, color: car.color, burnT: 0 });
+  car.health = 0;
+  g.wrecks.push({ x: car.x, z: car.z, heading: car.heading, model: car.model, t: 0 });
+  if (g.wrecks.length > 12) g.wrecks.shift();
   g.booms.push({ x: car.x, z: car.z, t: 0 });
   g.flash = 1;
   g.stats.wrecks += 1;
-  const wasPlayer = car === g.car;
-  const idx = g.cars.indexOf(car);
-  if (idx >= 0) g.cars.splice(idx, 1);
-  if (wasPlayer) {
+  // Chain damage — the blast cooks the cars around it.
+  for (const other of g.cars) {
+    if (other === car || other.exploded) continue;
+    const d = Math.hypot(other.x - car.x, other.z - car.z);
+    if (d < 14) damageCar(g, other, 60);
+  }
+  if (g.car === car) {
     g.player.inCar = false;
+    g.player.x = car.x + 3; g.player.z = car.z + 2;
+    g.player.health = Math.max(10, g.player.health - 30);
     g.car = null;
-    g.player.health = Math.max(1, g.player.health - 25);
-    g.hud.toast = 'Your car exploded!';
-    g.hud.toastT = 3;
   }
-  // Chain damage: nearby cars catch the blast.
-  for (const other of [...g.cars]) {
-    if (other.exploded) continue;
-    const dx = other.x - car.x;
-    const dz = other.z - car.z;
-    if (dx * dx + dz * dz < 64) damageCar(g, other, 40);
+  g.cars = g.cars.filter((c) => c !== car);
+}
+
+function collideCars(g, dt) {
+  const list = g.cars;
+  for (let i = 0; i < list.length; i += 1) {
+    const a = list[i];
+    if (a.exploded) continue;
+    for (let j = i + 1; j < list.length; j += 1) {
+      const b = list[j];
+      if (b.exploded) continue;
+      const dx = b.x - a.x, dz = b.z - a.z;
+      const d = Math.hypot(dx, dz);
+      if (d < 4 && d > 0.01) {
+        const nx = dx / d, nz = dz / d;
+        const rel = Math.abs(a.speed - b.speed);
+        const coolKey = a.id < b.id ? `${a.id}:${b.id}` : `${b.id}:${a.id}`;
+        if (!g._pairCool) g._pairCool = {};
+        if ((g._pairCool[coolKey] || 0) <= 0) {
+          const dmg = Math.max(6, rel * 0.7);
+          damageCar(g, a, dmg * 0.6);
+          damageCar(g, b, dmg * 0.6);
+          g._pairCool[coolKey] = 0.6;
+          // Shove them apart so they do not grind every frame.
+          a.x -= nx * 1.2; a.z -= nz * 1.2;
+          b.x += nx * 1.2; b.z += nz * 1.2;
+          a.speed *= 0.5; b.speed *= 0.5;
+        }
+      }
+    }
   }
-  // Nearby peds dive for cover.
-  for (const p of g.peds) {
-    const dx = p.x - car.x;
-    const dz = p.z - car.z;
-    if (dx * dx + dz * dz < 144) {
-      p.state = 'flee';
-      p.panic = 2;
+  if (g._pairCool) {
+    for (const k of Object.keys(g._pairCool)) {
+      g._pairCool[k] -= dt;
+      if (g._pairCool[k] <= 0) delete g._pairCool[k];
     }
   }
 }
 
-// The police. Wanted stars call in units; three stars and up bring the
-// RAM and PIT specialists. Cops chase the player and thin out when the
-// heat is gone.
-export function updateCops(g, dt) {
-  const wanted = g.player.wanted;
-  if (wanted <= 0) {
-    g.cops.length = 0;
-    return;
-  }
-  const target = Math.min(wanted * COPS_PER_STAR, MAX_COPS);
-  // Spawn the specialists first when the heat is on.
-  while (g.cops.length < target) {
-    let kind = 'patrol';
-    if (wanted >= 3 && !g.cops.some((c) => c.kind === 'ram')) kind = 'ram';
-    else if (wanted >= 3 && !g.cops.some((c) => c.kind === 'pit')) kind = 'pit';
-    const a = g.rng.next() * Math.PI * 2;
-    const dist = 35 + g.rng.next() * 20;
-    const cop = {
-      id: nextId++,
-      kind,
-      x: g.player.x + Math.sin(a) * dist,
-      z: g.player.z + Math.cos(a) * dist,
-      heading: 0,
-      speed: 0,
-      health: 100,
-      maxHealth: 100,
-    };
-    cop.x = Math.max(-200, Math.min(200, cop.x));
-    cop.z = Math.max(-200, Math.min(200, cop.z));
-    g.cops.push(cop);
-  }
-  // Chase: steer toward the player (or their car) and close in.
-  const tx = g.car ? g.car.x : g.player.x;
-  const tz = g.car ? g.car.z : g.player.z;
-  for (const cop of g.cops) {
-    const dx = tx - cop.x;
-    const dz = tz - cop.z;
-    const d = Math.sqrt(dx * dx + dz * dz) || 1;
-    const want = Math.atan2(dx, dz);
-    let dh = want - cop.heading;
-    while (dh > Math.PI) dh -= Math.PI * 2;
-    while (dh < -Math.PI) dh += Math.PI * 2;
-    cop.heading += Math.max(-2.4 * dt, Math.min(2.4 * dt, dh));
-    const targetSpeed = d > 6 ? 30 : 12;
-    cop.speed += (targetSpeed - cop.speed) * Math.min(1, dt * 1.5);
-    cop.x += Math.sin(cop.heading) * cop.speed * dt;
-    cop.z += Math.cos(cop.heading) * cop.speed * dt;
+function driveTraffic(g, dt) {
+  for (const c of g.cars) {
+    if (!c.traffic || c.exploded) continue;
+    // Cruise along its road; at the city edge, turn around.
+    const fx = Math.sin(c.heading), fz = Math.cos(c.heading);
+    c.x += fx * c.speed * dt;
+    c.z += fz * c.speed * dt;
+    if (c.x > 175 || c.x < -215 || c.z > 175 || c.z < -175) {
+      c.heading += Math.PI;
+      c.x = Math.max(-210, Math.min(170, c.x));
+      c.z = Math.max(-170, Math.min(170, c.z));
+    }
+    // Gentle wander so the street never looks frozen.
+    c.heading += Math.sin(g.time * 0.3 + c.id) * 0.02 * dt;
   }
 }
 
-// Wrecks keep burning. The flame flickers in the renderer; the burn
-// timer just ages them.
-export function updateWrecks(g, dt) {
-  for (const w of g.wrecks) w.burnT += dt;
+export function tickVehicles(g, dt) {
+  const c = g.car;
+  const keys = g.input.keys;
+  const fwd = keys.has('KeyW') || keys.has('ArrowUp');
+  const back = keys.has('KeyS') || keys.has('ArrowDown');
+  const left = keys.has('KeyA') || keys.has('ArrowLeft');
+  const right = keys.has('KeyD') || keys.has('ArrowRight');
+  if (c && !c.exploded) {
+    const top = c.topSpeed + g.garage.engine * 6;
+    const nitro = c.nitroBurn > 0 ? 1.6 : 1;
+    if (fwd) c.speed += 14 * nitro * dt;
+    else if (back) c.speed -= 18 * dt;
+    else c.speed -= Math.sign(c.speed) * Math.min(Math.abs(c.speed), 8 * dt);
+    if (c.speed > top * nitro) c.speed = top * nitro;
+    if (c.speed < -14) c.speed = -14;
+    const steer = (left ? 1 : 0) - (right ? 1 : 0);
+    const grip = Math.min(1, Math.abs(c.speed) / 12);
+    c.heading += steer * 1.9 * grip * dt * (c.speed >= 0 ? 1 : -1);
+    c.x += Math.sin(c.heading) * c.speed * dt;
+    c.z += Math.cos(c.heading) * c.speed * dt;
+    c.x = Math.max(-260, Math.min(190, c.x));
+    c.z = Math.max(-190, Math.min(190, c.z));
+    if (keys.has('Space')) burnNitro(g);
+    if (c.nitroBurn > 0) c.nitroBurn -= dt;
+    if (c.burnT > 0) c.burnT -= dt;
+  }
+  driveTraffic(g, dt);
+  collideCars(g, dt);
+  for (const w of g.wrecks) w.t += dt;
   for (const b of g.booms) b.t += dt;
-  g.booms = g.booms.filter((b) => b.t < 1.2);
-  if (g.flash > 0) g.flash = Math.max(0, g.flash - dt * 0.8);
+  g.booms = g.booms.filter((b) => b.t < 1.6);
+  if (g.flash > 0) g.flash = Math.max(0, g.flash - dt * 0.45);
+  checkChopShop(g);
+  refreshHideoutSedan(g);
+}
+
+export function burnNitro(g) {
+  const c = g.car;
+  if (!c || c.nitroBurn > 0) return false;
+  if (g.garage.nitro <= 0) return false;
+  g.garage.nitro -= 1;
+  c.nitroBurn = 2.0;
+  return true;
 }
