@@ -56,7 +56,6 @@ const crownGeo = new THREE.ConeGeometry(2.1, 2.6, 7);
 const lampPoleGeo = new THREE.CylinderGeometry(0.09, 0.12, 5.5, 6);
 const lampBulbGeo = new THREE.SphereGeometry(0.32, 8, 6);
 const cloudPuffGeo = new THREE.SphereGeometry(1, 10, 8);
-const flameGeo = new THREE.ConeGeometry(1.1, 2.6, 8);
 const smokeGeo = new THREE.SphereGeometry(1.4, 8, 6);
 const boomGeo = new THREE.SphereGeometry(1, 12, 10);
 
@@ -113,6 +112,8 @@ export function initRender(g, canvas) {
   scene.add(moon);
 
   // Clouds — ten white puffs, Basic material, drifting slowly.
+  // They hang low enough (y 36-50) to sit in the sky band of the
+  // near-level chase camera instead of above the frame.
   const clouds = [];
   const cloudMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.88, fog: false });
   for (let i = 0; i < 10; i += 1) {
@@ -123,7 +124,7 @@ export function initRender(g, canvas) {
       puff.scale.set(4.5, 1.5, 3);
       grp.add(puff);
     }
-    grp.position.set(g.rng.range(-260, 220), g.rng.range(42, 57), g.rng.range(-190, 190));
+    grp.position.set(g.rng.range(-260, 220), g.rng.range(36, 50), g.rng.range(-190, 190));
     scene.add(grp);
     clouds.push(grp);
   }
@@ -272,9 +273,19 @@ function heliMesh(g) {
   grp.add(stripe);
   const tail = mesh(new THREE.BoxGeometry(0.7, 0.7, 4.4), bodyMat, 0, 0.3, -4.4);
   grp.add(tail);
-  const rotor = mesh(new THREE.BoxGeometry(11, 0.12, 0.5), darkMat, 0, 1.1, 0);
+  const rotor = new THREE.Group();
   rotor.name = 'rotor';
+  rotor.add(mesh(new THREE.BoxGeometry(11, 0.12, 0.5), darkMat, 0, 0, 0));
+  rotor.add(mesh(new THREE.BoxGeometry(0.5, 0.12, 11), darkMat, 0, 0, 0));
+  rotor.position.set(0, 1.1, 0);
   grp.add(rotor);
+  // Nose details so the heli reads from the front too: dark
+  // windshield band above a red nose band (the side stripe is
+  // edge-on from dead ahead).
+  const shield = mesh(new THREE.BoxGeometry(2.6, 0.6, 0.15), new THREE.MeshLambertMaterial({ color: 0x14142a }), 0, 0.45, 2.75);
+  grp.add(shield);
+  const noseBand = mesh(new THREE.BoxGeometry(3.0, 0.35, 0.15), new THREE.MeshBasicMaterial({ color: 0xd90429 }), 0, -0.15, 2.75);
+  grp.add(noseBand);
   const cone = new THREE.Mesh(
     new THREE.ConeGeometry(4.5, 15, 16, 1, true),
     new THREE.MeshBasicMaterial({ color: 0xfff6c9, transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide }),
@@ -285,19 +296,37 @@ function heliMesh(g) {
   return grp;
 }
 function wreckMesh(g, wreck) {
+  // A burning car, not a black box with a cone: charred body + cabin
+  // + axles so the silhouette reads as a car, and flames sized to
+  // the car (about 1.5x its height) spread along its length so the
+  // body stays visible instead of drowning under one giant cone.
   const grp = new THREE.Group();
-  const body = mesh(new THREE.BoxGeometry(2.0, 0.8, 4.2), new THREE.MeshLambertMaterial({ color: 0x181818 }), 0, 0.5, 0);
+  const charMat = new THREE.MeshLambertMaterial({ color: 0x181818 });
+  const glassMat = new THREE.MeshLambertMaterial({ color: 0x0a0a12 });
+  const darkMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+  const body = mesh(new THREE.BoxGeometry(2.0, 0.8, 4.2), charMat, 0, 0.5, 0);
   body.rotation.z = 0.22;
   grp.add(body);
-  const flame = mesh(flameGeo, new THREE.MeshBasicMaterial({ color: 0xff6d00, transparent: true, opacity: 0.95 }), 0, 1.6, 0);
+  const cabin = mesh(new THREE.BoxGeometry(1.7, 0.7, 2.2), glassMat, 0, 1.15, -0.2);
+  cabin.rotation.z = 0.22;
+  grp.add(cabin);
+  grp.add(mesh(carAxleGeo, darkMat, 0, 0.25, 1.4));
+  grp.add(mesh(carAxleGeo, darkMat, 0, 0.25, -1.4));
+  const flame = mesh(new THREE.ConeGeometry(1.0, 2.2, 8), new THREE.MeshBasicMaterial({ color: 0xff6d00, transparent: true, opacity: 0.95 }), 0, 1.9, 1.2);
   flame.name = 'flame';
   grp.add(flame);
-  const flame2 = mesh(new THREE.ConeGeometry(0.6, 1.6, 8), new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.9 }), 0, 1.4, 0);
+  const flame2 = mesh(new THREE.ConeGeometry(0.6, 1.4, 8), new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.9 }), 0, 1.6, 1.2);
   flame2.name = 'flame2';
   grp.add(flame2);
+  const flame3 = mesh(new THREE.ConeGeometry(0.65, 1.5, 8), new THREE.MeshBasicMaterial({ color: 0xff6d00, transparent: true, opacity: 0.9 }), 0, 1.4, -1.3);
+  flame3.name = 'flame3';
+  grp.add(flame3);
   const smoke = mesh(smokeGeo, new THREE.MeshBasicMaterial({ color: 0x555555, transparent: true, opacity: 0.4 }), 0, 4, 0);
   smoke.name = 'smoke';
   grp.add(smoke);
+  const smoke2 = mesh(new THREE.SphereGeometry(1.6, 8, 6), new THREE.MeshBasicMaterial({ color: 0x333333, transparent: true, opacity: 0.45 }), 0, 7.0, -0.5);
+  smoke2.name = 'smoke2';
+  grp.add(smoke2);
   return grp;
 }
 
@@ -395,11 +424,15 @@ export function drawFrame(g, dt) {
     if (!w) continue;
     const flame = m.getObjectByName('flame');
     const flame2 = m.getObjectByName('flame2');
+    const flame3 = m.getObjectByName('flame3');
     const smoke = m.getObjectByName('smoke');
     const pulse = 1 + Math.sin(w.t * 9 + key.length) * 0.25;
     if (flame) flame.scale.set(pulse, pulse * (1 + Math.sin(w.t * 7) * 0.2), pulse);
     if (flame2) flame2.scale.setScalar(pulse);
-    if (smoke) { smoke.position.y = 4 + (w.t % 3); smoke.material.opacity = 0.4 * (1 - (w.t % 3) / 3); }
+    if (flame3) flame3.scale.setScalar(pulse * 0.9);
+    // The animated puff fades gently (never to zero) so the fire
+    // keeps a smoke column at any age; smoke2 is static.
+    if (smoke) { smoke.position.y = 4 + (w.t % 3); smoke.material.opacity = 0.45 * (1 - (w.t % 3) / 6); }
   }
   syncMeshes(g, r.boomMeshes, g.booms, (gg, b) => {
     const m = new THREE.Mesh(boomGeo, new THREE.MeshBasicMaterial({ color: 0xff7b00, transparent: true, opacity: 0.9 }));
