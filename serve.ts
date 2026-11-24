@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('.', import.meta.url));
 
 function mimeFor(path) {
-  const ext = extname(path);
+  const ext = extname(path).toLowerCase();
   if (ext === '.html') return 'text/html';
   if (ext === '.js' || ext === '.mjs') return 'text/javascript';
   if (ext === '.css') return 'text/css';
@@ -23,12 +23,10 @@ const server = createServer(async (req, res) => {
     const data = await readFile(join(root, 'game', path));
     res.writeHead(200, { 'Content-Type': mimeFor(path) });
     res.end(data);
-  } catch {
-    res.writeHead(404);
+  } catch (err) {
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('not found');
   }
 });
 
-server.listen(8126, () => {
-  console.log('Solmar Heat at http://localhost:8126');
-});
+server.listen(8126, () => console.log('Solmar Heat at http://localhost:8126'));
