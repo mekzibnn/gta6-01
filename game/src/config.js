@@ -1,118 +1,124 @@
-// Static data for Solmar Heat — districts, weapons, crew, businesses,
-// missions, prices and palettes. Pure data, no logic.
-export const SAVE_KEY = 'solmar-heat.save.v2';
+// Solmar Heat v12 — shared constants. All tuning numbers live here.
+export const WORLD = { min: -220, max: 220, beachX: 165, waterX: 195 };
 
 export const DISTRICTS = [
-  { id: 'marina', name: 'Marina', test: (x, z) => x < -90 },
-  { id: 'docks', name: 'Docks', test: (x, z) => x >= -90 && z > 90 },
-  { id: 'hills', name: 'Hills', test: (x, z) => x >= -90 && z < -90 },
-  { id: 'oldtown', name: 'Old Town', test: (x, z) => x >= -90 && x < 0 && z >= -90 && z <= 90 },
-  { id: 'downtown', name: 'Downtown', test: (x, z) => x >= 0 && z >= -90 && z <= 90 },
+  { name: 'Downtown', x0: -75, z0: -75, x1: 75, z1: 75 },
+  { name: 'Old Town', x0: -220, z0: -75, x1: -75, z1: 75 },
+  { name: 'Beachfront', x0: 75, z0: -75, x1: 220, z1: 220 },
+  { name: 'Marina', x0: -75, z0: 75, x1: 75, z1: 220 },
+  { name: 'Hillside', x0: -220, z0: 75, x1: -75, z1: 220 },
 ];
 
-export const RESPECT_TITLES = [
-  { at: 0, name: 'NOBODY' },
-  { at: 100, name: 'DOCK HAND' },
-  { at: 250, name: 'FIXER' },
-  { at: 500, name: 'SHOT CALLER' },
-  { at: 1000, name: 'KINGPIN' },
-];
+export const SPOTS = {
+  hideout: { x: 0, z: 100 },
+  garage: { x: 12, z: 60 },
+  pier: { x: -160, z: 190 },
+  fence: { x: -140, z: -60 },
+  chopShop: { x: 140, z: -140 },
+  laundry: { x: -100, z: 60 },
+  dragStrip: { x: 180, z: -20 },
+  bank: { x: 40, z: -120 },
+  safehouse: { x: -60, z: 180 },
+  taxiStand: { x: -30, z: 120 },
+  stadium: { x: 120, z: 120 },
+};
 
-export const RANK_GRADES = [
-  { at: 0, g: 'D' },
-  { at: 1000, g: 'C' },
-  { at: 2500, g: 'B' },
-  { at: 5200, g: 'A' },
-  { at: 10000, g: 'S' },
+export const GUN_STORE = { x: 148, z: 148 };
+export const CREW_OFFICE = { x: -24, z: -196 };
+export const HIDDEN_PACKAGES = [
+  { x: -170, z: -160 }, { x: 60, z: 180 }, { x: 200, z: 40 }, { x: -190, z: 20 },
+  { x: 100, z: -170 }, { x: -40, z: -180 }, { x: 170, z: 160 }, { x: -120, z: 140 },
+];
+export const STUNT_JUMPS = [
+  { x: 0, z: -150, dir: 0 }, { x: 150, z: 60, dir: 1 }, { x: -150, z: 0, dir: 0 },
 ];
 
 export const WEAPONS = [
-  { slot: 0, id: 'fists', name: 'Fists', ammo: Infinity, price: 0 },
-  { slot: 1, id: 'bat', name: 'Bat', ammo: Infinity, price: 150 },
-  { slot: 2, id: 'pistol', name: 'Pistol', ammo: 60, price: 0 },
-  { slot: 3, id: 'smg', name: 'SMG', ammo: 60, price: 900 },
-  { slot: 4, id: 'shotgun', name: 'Shotgun', ammo: 18, price: 1200 },
-  { slot: 5, id: 'rifle', name: 'Rifle', ammo: 40, price: 2000 },
-  { slot: 6, id: 'rpg', name: 'RPG', ammo: 4, price: 5000 },
+  { name: 'Fists', ammo: Infinity, price: 0 },
+  { name: 'Bat', ammo: Infinity, price: 0 },
+  { name: 'Pistol', ammo: 60, reserve: 60, price: 300 },
+  { name: 'SMG', ammo: 30, reserve: 60, price: 800 },
+  { name: 'Shotgun', ammo: 8, reserve: 24, price: 1200 },
+  { name: 'Rifle', ammo: 30, reserve: 90, price: 2000 },
+  { name: 'RPG', ammo: 1, reserve: 4, price: 5000 },
 ];
 
-export const CREW = [
+export const VEHICLE_DEFS = {
+  sedan: { top: 28, accel: 13, turn: 1.9, price: 400, label: 'SEDAN' },
+  taxi: { top: 26, accel: 12, turn: 1.9, price: 350, label: 'TAXI' },
+  sport: { top: 38, accel: 18, turn: 2.4, price: 1200, label: 'SPORT' },
+  van: { top: 22, accel: 10, turn: 1.6, price: 600, label: 'VAN' },
+  truck: { top: 20, accel: 9, turn: 1.4, price: 800, label: 'TRUCK' },
+  motorcycle: { top: 34, accel: 20, turn: 2.8, price: 900, label: 'BIKE' },
+  pickup: { top: 26, accel: 12, turn: 1.8, price: 700, label: 'PICKUP' },
+};
+
+export const BUSINESSES = [
+  { id: 'solmar-laundry', name: 'Solmar Laundry', price: 500, rate: 35 },
+  { id: 'marina-cafe', name: 'Marina Cafe', price: 1200, rate: 60 },
+  { id: 'beach-bar', name: 'Beach Bar', price: 2000, rate: 90 },
+  { id: 'hillside-motors', name: 'Hillside Motors', price: 3500, rate: 140 },
+];
+
+export const CREW_DEFS = [
   { id: 'milo', name: 'Milo', role: 'Driver', ability: 'SWAP PLATES', key: 'Z', price: 900 },
   { id: 'vera', name: 'Vera', role: 'Mechanic', ability: 'QUICK FIX', key: 'X', price: 1400 },
   { id: 'tank', name: 'Tank', role: 'Lookout', ability: 'EYES OUT', key: 'C', price: 1800 },
 ];
 
-export const BUSINESSES = [
-  { id: 'solmar-laundry', name: 'Solmar Laundry', price: 500, income: 35 },
-  { id: 'marina-diner', name: 'Marina Diner', price: 1200, income: 70 },
-  { id: 'dock-warehouse', name: 'Dock Warehouse', price: 2500, income: 140 },
-  { id: 'hills-motel', name: 'Hills Motel', price: 4000, income: 220 },
+export const RACE_DEFS = {
+  sprint: { fee: 150, prize: 600, label: 'Marina Sprint' },
+  circuit: { fee: 200, prize: 900, label: 'Strip Circuit' },
+  drag: { fee: 100, prize: 400, label: 'Beach Drag' },
+};
+
+export const GARAGE_PRICES = { engine: [800, 1600, 2400], armor: [600, 1200], nitro: 200 };
+
+export const DISPATCH_UNITS = [
+  { id: 1, name: 'KITE-1', role: 'RAMMING', kind: 'ram' },
+  { id: 2, name: 'MARLIN-3', role: 'PIT', kind: 'pit' },
+  { id: 3, name: 'CORAL-48', role: 'SHORE WATCH', kind: 'shore' },
+  { id: 4, name: 'PALM-7', role: 'RAMMING', kind: 'ram' },
+  { id: 5, name: 'SURF-12', role: 'PIT', kind: 'pit' },
+  { id: 6, name: 'TIDE-22', role: 'FLANKING', kind: 'flank' },
 ];
 
-export const RACES = [
-  { id: 'drag', name: 'Drag Strip', fee: 100, prize: 400 },
-  { id: 'sprint', name: 'Marina Sprint', fee: 150, prize: 600 },
-  { id: 'circuit', name: 'Strip Circuit', fee: 200, prize: 800 },
-];
+export const PALETTE = [0xe86a33, 0xe85d5d, 0xe88aa0, 0xf2d8a7, 0x3e8e8a, 0xf2b705, 0x7a5c9e];
 
-export const ENGINE_PRICES = [0, 800, 1600, 2400];
-export const ARMOR_PRICES = [0, 1200, 2200];
-export const NITRO_PRICE = 300;
-export const NITRO_MAX = 3;
-
-export const MISSIONS = [
-  { id: 'm1', name: 'Wheels Up', reward: 400, steps: [
-    { kind: 'goto', spot: 'garage', text: 'Drive to the Garage — do not get busted' } ] },
-  { id: 'm2', name: 'Sunset Strip', reward: 500, steps: [
-    { kind: 'goto', spot: 'dragStrip', text: 'Reach the Drag Strip before sundown' } ] },
-  { id: 'm3', name: 'Dock Hand', reward: 600, steps: [
-    { kind: 'goto', spot: 'docks', text: 'Pick up the crate at the Docks' },
-    { kind: 'goto', spot: 'marina', text: 'Drop the crate at the Marina' } ] },
-  { id: 'm4', name: 'Night Shift', reward: 700, steps: [
-    { kind: 'night', spot: 'pier', text: 'Reach the Pier after dark' } ] },
-  { id: 'm5', name: 'Clean Getaway', reward: 800, steps: [
-    { kind: 'heat', text: 'Lose the heat — get back to zero stars' } ] },
-  { id: 'm6', name: 'Laundry Day', reward: 900, steps: [
-    { kind: 'goto', spot: 'laundry', text: 'Check in at Solmar Laundry' } ] },
-  { id: 'm7', name: 'Full Tank', reward: 1000, steps: [
-    { kind: 'goto', spot: 'hills', text: 'Climb to the Hills overlook' } ] },
-  { id: 'm8', name: 'Old Town Run', reward: 1200, steps: [
-    { kind: 'goto', spot: 'oldtown', text: 'Pick up the parcel in Old Town' },
-    { kind: 'goto', spot: 'downtown', text: 'Deliver the parcel Downtown' } ] },
-  { id: 'm9', name: "Smuggler's Run", reward: 0, steps: [
-    { kind: 'goto', spot: 'pier', text: 'Pick up the package at the Pier' },
-    { kind: 'goto', spot: 'fence', text: 'Drop the package at the Fence', pay: 150, heat: 1 } ] },
-  { id: 'm10', name: 'Heat Wave', reward: 2000, steps: [
-    { kind: 'goto', spot: 'hills', text: 'Outrun the heat — reach the Hills' } ] },
-  { id: 'm11', name: 'Empire Rising', reward: 6000, steps: [
-    { kind: 'own', text: 'Own a business — any storefront will do' },
-    { kind: 'goto', spot: 'laundry', text: 'Drop the ledger at Solmar Laundry', pay: 150 } ] },
-  { id: 'm12', name: 'Crew Up', reward: 7500, steps: [
-    { kind: 'crew', text: 'Have Milo on the roster and a Sprint win' },
-    { kind: 'crew', text: 'The crew is ready — meet Milo at the hideout' } ] },
-];
-
-export const SUNSET_PALETTE = [
-  0xff9a5c, 0xff7a6b, 0xffc46b, 0xf26d7d, 0x8ecae6,
-  0xffb703, 0xfb8500, 0xe07a5f, 0x81b29a, 0xf4a261,
-];
-
-export const DISPATCH_NAMES = [
-  'KITE-1', 'MARLIN-3', 'CORAL-48', 'PALM-7', 'SURF-12',
-  'TIDE-22', 'REEF-5', 'BAY-9', 'DUNE-4', 'FOAM-17',
-];
-
-export const DISPATCH_ROLES = [
-  'RAMMING', 'FLANKING', 'SPOTLIGHT', 'ROADBLOCK', 'SHORE WATCH', 'MARKSMAN',
-];
+export const RADIO = { station: 'SOL FM 98.4', show: 'Solmar Nights', tracks: ['Neon Coast', 'Palm Static', 'Golden Hour Drive', 'Vice City Lights', 'Sunset Run'] };
 
 export const LEO_LINES = [
-  'New wheels, same streets. Get to the Garage, kid.',
   'All units, suspect heading down the avenue. Stay sharp.',
-  'Air One has eyes on the suspect. Do not lose them.',
-  'KPD to all units: box them in at the next light.',
-  'Suspect is quick. RAM units, take the front.',
+  'Air One has visual. Keep the spotlight on the suspect.',
+  'Units 3 and 5, set up a roadblock at the Marina.',
+  'Suspect is armed. Approach with caution.',
+  'Dispatch, we need a PIT unit on the avenue, now.',
+  'All units, the suspect is heading for the Hillside.',
 ];
 
-export const RADIO_LINE = 'SOL FM 98.4 — Solmar Nights';
-export const STATION_NAME = 'SOL FM 98.4';
+export const RANK_TITLES = [
+  { rp: 0, letter: 'D', title: 'NOBODY' },
+  { rp: 250, letter: 'C', title: 'DOCK HAND' },
+  { rp: 600, letter: 'C', title: 'HUSTLER' },
+  { rp: 1200, letter: 'B', title: 'FIXER' },
+  { rp: 2000, letter: 'A', title: 'KINGPIN' },
+  { rp: 3000, letter: 'S', title: 'SOLMAR LEGEND' },
+];
+
+export function rankFor(rp) {
+  let cur = RANK_TITLES[0];
+  let next = null;
+  for (let i = 0; i < RANK_TITLES.length; i += 1) {
+    if (rp >= RANK_TITLES[i].rp) cur = RANK_TITLES[i];
+    else { next = RANK_TITLES[i]; break; }
+  }
+  return { cur, next };
+}
+
+export function standingLabel(v) {
+  if (v < 20) return 'COLD';
+  if (v < 50) return 'COOL';
+  if (v < 100) return 'NEUTRAL';
+  if (v < 150) return 'WARM';
+  return 'HOT';
+}

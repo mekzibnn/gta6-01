@@ -1,42 +1,36 @@
-// Crew — roster perks and the Z / X / C abilities.
-import { CREW } from './config.js';
+// Solmar Heat v12 — crew: hire Milo/Vera/Tank, use their abilities (Z/X/C).
+import { CREW_DEFS } from './config.js';
 
-export function hasCrew(g) {
-  return Object.keys(g.roster.hired).length > 0;
-}
-export function crewPrice(g, id) {
-  const c = CREW.find((x) => x.id === id);
-  return c ? c.price : 0;
-}
-
-export function tickCrew(g, dt) {
-  const cds = g.roster.cooldowns;
-  for (const k of Object.keys(cds)) {
-    cds[k] -= dt;
-    if (cds[k] <= 0) delete cds[k];
-  }
-  if (g._eyesT > 0) g._eyesT -= dt;
-}
-
-export function useAbility(g, id) {
-  if (!g.roster.hired[id]) return false;
-  if (g.roster.cooldowns[id] > 0) return false;
-  if (id === 'milo') {
-    // SWAP PLATES — sheds a star of heat.
-    if (g.player.wanted <= 0) return false;
-    g.player.wanted = Math.max(0, g.player.wanted - 1);
-    g.roster.cooldowns[id] = 30;
-  } else if (id === 'vera') {
-    // QUICK FIX — patches the car back up.
-    if (!g.car) return false;
-    g.car.health = Math.min(g.car.maxHealth, g.car.health + 30);
-    g.roster.cooldowns[id] = 20;
-  } else if (id === 'tank') {
-    // EYES OUT — the KPD loses the trail for a while.
-    g._eyesT = 12;
-    g.roster.cooldowns[id] = 25;
-  }
-  g.hud.note = `${CREW.find((c) => c.id === id).ability} — ${CREW.find((c) => c.id === id).name}`;
-  g.hud.noteT = 2;
+export function hireCrew(g, id) {
+  const def = CREW_DEFS.find((c) => c.id === id);
+  if (!def || g.roster.hired[id]) return false;
+  if (g.player.cash < def.price) return false;
+  g.player.cash -= def.price;
+  g.roster.hired[id] = { active: true };
   return true;
+}
+
+export function crewDiscount(g) {
+  return Object.keys(g.roster.hired).length > 0 ? 0.9 : 1;
+}
+
+export function useAbility(g, key) {
+  const now = g.time;
+  if (key === 'z' && g.roster.hired.milo) {
+    if (now - (g.crewCooldowns.z || 0) < 30) return;
+    g.crewCooldowns.z = now;
+    if (g.player.wanted > 0) { g.player.wanted -= 1; g.player.lastCrime = g.time; }
+    g.hud.banner = 'SWAP PLATES — heat down a star'; g.hud.bannerT = 3; g.hud.bannerKind = 'crew';
+  } else if (key === 'x' && g.roster.hired.vera) {
+    if (now - (g.crewCooldowns.x || 0) < 30) return;
+    g.crewCooldowns.x = now;
+    if (g.car) g.car.health = g.car.maxHealth;
+    g.player.health = 100;
+    g.hud.banner = 'QUICK FIX — ride patched up'; g.hud.bannerT = 3; g.hud.bannerKind = 'crew';
+  } else if (key === 'c' && g.roster.hired.tank) {
+    if (now - (g.crewCooldowns.c || 0) < 30) return;
+    g.crewCooldowns.c = now;
+    g.eyesOut = 20;
+    g.hud.banner = 'EYES OUT — Tank is watching the streets'; g.hud.bannerT = 3; g.hud.bannerKind = 'crew';
+  }
 }

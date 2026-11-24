@@ -1,19 +1,31 @@
-// Garage upgrades — engine tiers, armour tiers and nitro. Prices live
-// here so the shop menu and the HUD quote the same numbers.
-import { ENGINE_PRICES, ARMOR_PRICES, NITRO_PRICE } from './config.js';
-import { hasCrew } from './crew.js';
+// Solmar Heat v12 — garage upgrades: engine tiers, armour, nitro.
+import { GARAGE_PRICES } from './config.js';
+import { crewDiscount } from './crew.js';
 
-export function enginePrice(g) {
-  const next = g.garage.engine + 1;
-  if (next >= ENGINE_PRICES.length) return null;
-  return Math.round(ENGINE_PRICES[next] * (hasCrew(g) ? 0.9 : 1));
+export function buyEngine(g) {
+  const tier = g.garage.engine;
+  if (tier >= 3) return false;
+  const price = Math.round(GARAGE_PRICES.engine[tier] * crewDiscount(g));
+  if (g.player.cash < price) return false;
+  g.player.cash -= price;
+  g.garage.engine = tier + 1;
+  return true;
 }
-export function armorPrice(g) {
-  const next = g.garage.armor + 1;
-  if (next >= ARMOR_PRICES.length) return null;
-  return Math.round(ARMOR_PRICES[next] * (hasCrew(g) ? 0.9 : 1));
+
+export function buyArmor(g) {
+  const tier = g.garage.armor;
+  if (tier >= 2) return false;
+  const price = Math.round(GARAGE_PRICES.armor[tier] * crewDiscount(g));
+  if (g.player.cash < price) return false;
+  g.player.cash -= price;
+  g.garage.armor = tier + 1;
+  return true;
 }
-export function nitroPrice() { return NITRO_PRICE; }
-export function armorLabel(tier) {
-  return tier === 0 ? 'None' : tier === 1 ? 'Light' : 'Heavy';
+
+export function buyNitro(g) {
+  const price = GARAGE_PRICES.nitro;
+  if (g.player.cash < price || g.garage.nitro >= 3) return false;
+  g.player.cash -= price;
+  g.garage.nitro += 1;
+  return true;
 }

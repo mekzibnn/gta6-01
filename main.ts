@@ -1,13 +1,27 @@
+// Solmar Heat v12 — dossier builder entrypoint (plain JavaScript, no TS syntax).
+// The grader runs `node /bot/main.ts` from a cwd that is NOT /bot, as an
+// unprivileged user, with /output a root-owned mount: so every path is
+// absolute (resolved from import.meta.url), and we NEVER remove outDir
+// itself — only its children.
 import { fileURLToPath } from 'node:url';
-import { join } from 'node:path';
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { mkdirSync, cpSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { buildDossier } from './vendor/makefun-game.ts';
 
-// new URL('.', import.meta.url) is already the directory holding this
-// file, so fileURLToPath gives the repo root directly — do NOT wrap it
-// in dirname (that would climb one level up to the parent).
 const root = fileURLToPath(new URL('.', import.meta.url));
 const outDir = process.env.MAKEFUN_OUTPUT_DIR || 'out';
+const gameDir = join(root, 'game');
+const shotsDir = join(root, 'screenshots');
+
+mkdirSync(outDir, { recursive: true });
+// Remove only children of outDir — never outDir itself (root-owned mount).
+for (const child of ['game', 'screenshots', 'dossier.json']) {
+  const p = join(outDir, child);
+  if (existsSync(p)) rmSync(p, { recursive: true, force: true });
+}
+cpSync(gameDir, join(outDir, 'game'), { recursive: true });
+if (existsSync(shotsDir)) cpSync(shotsDir, join(outDir, 'screenshots'), { recursive: true });
+
 const CAPS = {
   text_max_bytes: 163840,
   screenshots: { max: 4, max_bytes: 262144 },
@@ -16,23 +30,7 @@ const CAPS = {
   game_path_max_bytes: 1000,
 };
 
-// Never delete outDir itself — the grader runs as an unprivileged user
-// and cannot remove the root-owned output mount. Clear only its children.
-rmSync(join(outDir, 'game'), { recursive: true, force: true });
-rmSync(join(outDir, 'screenshots'), { recursive: true, force: true });
-rmSync(join(outDir, 'dossier.json'), { force: true });
-mkdirSync(join(outDir, 'game'), { recursive: true });
-mkdirSync(join(outDir, 'screenshots'), { recursive: true });
-if (existsSync(join(root, 'game'))) {
-  cpSync(join(root, 'game'), join(outDir, 'game'), { recursive: true });
-}
-if (existsSync(join(root, 'screenshots'))) {
-  cpSync(join(root, 'screenshots'), join(outDir, 'screenshots'), { recursive: true });
-}
-// buildDossier returns the dossier as a Uint8Array of UTF-8 JSON bytes —
-// write those bytes verbatim. (JSON.stringify on a Uint8Array would
-// expand every byte into a numeric-key object and bloat the file ~12x.)
+// buildDossier returns a Uint8Array — write its bytes verbatim.
 const dossier = buildDossier(outDir, CAPS);
 writeFileSync(join(outDir, 'dossier.json'), dossier);
-console.log(`dossier written to ${join(outDir, 'dossier.json')}`);
-console.log('Solmar Heat build complete');
+console.log('dossier written:', join(outDir, 'dossier.json'), dossier.length, 'bytes');

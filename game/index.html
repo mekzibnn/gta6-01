@@ -1,18 +1,76 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Solmar Heat — Streets of the Sun</title>
 <style>
-  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #160a2e; }
-  #gl, #hud { position: absolute; left: 0; top: 0; width: 1280px; height: 720px; }
-  #hud { pointer-events: none; }
+  html, body { margin: 0; padding: 0; overflow: hidden; background: #000; height: 100%; }
+  #app, #app canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #hud { position: fixed; inset: 0; pointer-events: none; color: #fff; font-family: 'Arial Narrow', Arial, sans-serif; font-size: 13px; text-shadow: 0 1px 2px rgba(0,0,0,.8); z-index: 5; }
+  .panel { background: rgba(10,14,24,.74); border: 1px solid rgba(255,255,255,.14); border-radius: 4px; padding: 6px 9px; }
+  #hud-tl { position: absolute; top: 10px; left: 10px; width: 348px; }
+  #banner { border-left: 3px solid #f2b705; }
+  #banner-title { color: #ffd94d; font-weight: bold; font-size: 15px; letter-spacing: .4px; }
+  #banner-obj { font-size: 12.5px; margin-top: 2px; color: #eef2ff; }
+  #banner-row { display: flex; gap: 10px; margin-top: 5px; font-size: 11.5px; color: #cfe3ff; align-items: center; }
+  #banner-stage { flex: 1; }
+  #banner-timer { font-weight: bold; color: #fff; }
+  #banner-job { color: #7db8ff; font-weight: bold; }
+  #dispatch { margin-top: 8px; }
+  #dispatch-head { color: #ff6b5e; font-weight: bold; font-size: 12.5px; letter-spacing: .5px; }
+  .dispatch-unit { font-size: 12px; color: #dfe8ff; padding: 1px 0; display: flex; justify-content: space-between; }
+  #hud-tc { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); text-align: center; width: 420px; }
+  #clockplate { font-size: 12px; color: #eef2ff; display: inline-block; }
+  #alert-insight { display: none; background: #d92b2b; color: #fff; font-weight: bold; font-size: 13px; margin-top: 6px; padding: 5px 10px; border-radius: 3px; }
+  #hud-tr { position: absolute; top: 10px; right: 10px; width: 302px; }
+  #cashstars { font-size: 17px; font-weight: bold; text-align: right; color: #ffd94d; }
+  #rankpanel { margin-top: 6px; }
+  #rank-line { font-size: 15px; font-weight: bold; }
+  #rank-bar { font-size: 11.5px; color: #cfe3ff; margin-top: 2px; }
+  #district-line, #respect-line, #empire-line { font-size: 12px; color: #dfe8ff; margin-top: 2px; }
+  #crew { margin-top: 6px; }
+  #crew-head { font-size: 11.5px; color: #9fb4d8; letter-spacing: 1px; }
+  .crew-card { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-top: 1px solid rgba(255,255,255,.08); }
+  .crew-face { width: 28px; height: 28px; border-radius: 50%; background: #2f6b4f; color: #fff; font-weight: bold; display: flex; align-items: center; justify-content: center; font-size: 15px; flex: none; }
+  .crew-body { flex: 1; }
+  .crew-name { font-size: 13px; font-weight: bold; }
+  .crew-ability { font-size: 11px; color: #9fb4d8; }
+  .crew-price { font-size: 12px; color: #ffd94d; font-weight: bold; }
+  #weapons { margin-top: 6px; }
+  #weapons-head { font-size: 11.5px; color: #7db8ff; letter-spacing: .5px; }
+  .weapon-slot { display: flex; gap: 6px; font-size: 12px; padding: 1px 0; color: #c8d4ea; }
+  .weapon-slot.active { color: #ffd94d; font-weight: bold; }
+  .weapon-num { width: 12px; color: #9fb4d8; }
+  .weapon-name { flex: 1; }
+  .weapon-ammo { color: #9fb4d8; }
+  #hud-bl { position: absolute; left: 10px; bottom: 10px; }
+  #minimap { border: 1px solid rgba(255,255,255,.35); border-radius: 3px; background: #0a0f1a; display: block; }
+  #minimap-label { font-size: 11px; color: #fff; margin-top: 3px; letter-spacing: 1px; }
+  #leo { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); max-width: 540px; text-align: center; font-size: 13px; color: #eef2ff; }
+  #hud-br { position: absolute; right: 10px; bottom: 10px; width: 262px; }
+  #speed { text-align: right; }
+  #speed-num { font-size: 46px; font-weight: bold; line-height: 1; color: #fff; }
+  #speed-num::after { content: " KM/H"; font-size: 16px; color: #7db8ff; }
+  #speed-car { font-size: 13px; font-weight: bold; margin-top: 2px; }
+  #speed-cond { font-size: 11px; color: #9fe870; }
+  #health-bar, #armour-bar { font-size: 11.5px; color: #cfe3ff; }
+  #wheel { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 280px; }
+  .wheel-head { color: #ffd94d; font-weight: bold; margin-bottom: 4px; }
+  .wheel-row { padding: 3px 4px; font-size: 13px; }
+  .wheel-row.sel { background: rgba(242,183,5,.25); color: #ffd94d; font-weight: bold; }
+  #shopmenu { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 320px; font-size: 13px; }
+  .shop-head { color: #ffd94d; font-weight: bold; font-size: 15px; margin-bottom: 4px; }
+  .shop-foot { color: #9fb4d8; font-size: 11px; margin-top: 6px; }
+  #pause-ov { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 26px; font-weight: bold; color: #fff; background: rgba(0,0,0,.6); padding: 14px 26px; border-radius: 6px; }
 </style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
 </head>
 <body>
-<canvas id="gl" width="1280" height="720"></canvas>
-<canvas id="hud" width="1280" height="720"></canvas>
+<div id="app"></div>
+<div id="hud"></div>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

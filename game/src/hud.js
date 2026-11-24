@@ -1,413 +1,295 @@
-// 2D HUD — the dense top-tier overlay: mission banner with stage bar
-// and timer, KPD RESPONSE with named units, rank panel, district
-// standing, respect progress, crew cards with portraits and keybinds,
-// weapon slots with ammo, a real street minimap, big speed, dialogue.
-import { WEAPONS, CREW, RANK_GRADES, RESPECT_TITLES, RADIO_LINE, MISSIONS } from './config.js';
-import { armorLabel } from './upgrades.js';
+// Solmar Heat v12 — HUD: dense DOM overlay (mission banner, dispatch, rank, crew,
+// weapons, speed, minimap, LEO dialogue, alerts, clock plate, wheel, shop menu).
+import { CREW_DEFS, WEAPONS, DISPATCH_UNITS, RADIO, LEO_LINES, rankFor, standingLabel } from './config.js';
+import { MISSION_DEFS } from './missions.js';
+import { clockLabel } from './daynight.js';
+import { weaponAmmoText } from './actors.js';
+import { GARAGE_PRICES, RACE_DEFS } from './config.js';
+import { crewDiscount } from './crew.js';
 
-const W = 1280, H = 720;
-
-export function buildHud(g, canvas) {
-  canvas.width = W;
-  canvas.height = H;
-  g.hud.ctx = canvas.getContext('2d');
-  g.hud.canvas = canvas;
+function el(tag, id, cls, parent) {
+  const e = document.createElement(tag);
+  if (id) e.id = id;
+  if (cls) e.className = cls;
+  if (parent) parent.appendChild(e);
+  return e;
 }
 
-function ctxOf(g) { return g.hud.ctx; }
+export function buildHud(g) {
+  const hud = document.getElementById('hud');
+  hud.innerHTML = '';
+  const tl = el('div', 'hud-tl', null, hud);
+  const banner = el('div', 'banner', 'panel', tl);
+  el('div', 'banner-title', null, banner);
+  el('div', 'banner-obj', null, banner);
+  const brow = el('div', 'banner-row', null, banner);
+  el('div', 'banner-stage', null, brow);
+  el('div', 'banner-timer', null, brow);
+  el('div', 'banner-job', null, brow);
+  const disp = el('div', 'dispatch', 'panel', tl);
+  el('div', 'dispatch-head', null, disp);
+  const dlist = el('div', 'dispatch-list', null, disp);
+  for (let i = 0; i < 6; i += 1) el('div', 'dispatch-unit-' + i, 'dispatch-unit', dlist);
 
-function panel(c, x, y, w, h, alpha) {
-  c.fillStyle = `rgba(8,10,18,${alpha === undefined ? 0.72 : alpha})`;
-  c.fillRect(x, y, w, h);
-  c.strokeStyle = 'rgba(255,255,255,0.28)';
-  c.lineWidth = 1;
-  c.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-}
-function word(c, text, x, y, size, color, bold, align) {
-  c.font = `${bold ? 'bold ' : ''}${size}px system-ui, sans-serif`;
-  c.fillStyle = color || '#ffffff';
-  c.textAlign = align || 'left';
-  c.textBaseline = 'alphabetic';
-  c.fillText(text, x, y);
-}
-function bar(c, x, y, w, h, frac, fill, bg) {
-  c.fillStyle = bg || 'rgba(255,255,255,0.18)';
-  c.fillRect(x, y, w, h);
-  const f = Math.max(0, Math.min(1, frac));
-  c.fillStyle = fill;
-  c.fillRect(x, y, w * f, h);
-}
-function fmtTime(t) {
-  const m = Math.floor(t / 60), s = Math.floor(t % 60);
-  return `${m}:${String(s).padStart(2, '0')}`;
-}
-function fmtNum(n) { return Math.round(n).toLocaleString('en-US'); }
-function rankPoints(g) {
-  return g.player.respect * 10 + g.stats.missions * 150 + g.stats.racesWon * 100;
-}
-function rankGrade(g) {
-  const rp = rankPoints(g);
-  let grade = RANK_GRADES[0];
-  for (const r of RANK_GRADES) if (rp >= r.at) grade = r;
-  return { rp, grade };
-}
-function respectInfo(g) {
-  const r = g.player.respect;
-  let cur = RESPECT_TITLES[0];
-  let next = null;
-  for (let i = 0; i < RESPECT_TITLES.length; i += 1) {
-    if (r >= RESPECT_TITLES[i].at) cur = RESPECT_TITLES[i];
-    else if (!next) next = RESPECT_TITLES[i];
+  const tc = el('div', 'hud-tc', null, hud);
+  el('div', 'clockplate', 'panel', tc);
+  el('div', 'alert-insight', null, tc);
+
+  const tr = el('div', 'hud-tr', null, hud);
+  el('div', 'cashstars', 'panel', tr);
+  const rank = el('div', 'rankpanel', 'panel', tr);
+  el('div', 'rank-line', null, rank);
+  el('div', 'rank-bar', null, rank);
+  el('div', 'district-line', null, rank);
+  el('div', 'respect-line', null, rank);
+  el('div', 'empire-line', null, rank);
+  const crew = el('div', 'crew', 'panel', tr);
+  el('div', 'crew-head', null, crew);
+  const clist = el('div', 'crew-list', null, crew);
+  for (let i = 0; i < 3; i += 1) {
+    const c = el('div', 'crew-card-' + i, 'crew-card', clist);
+    // el(tag, id, class, parent): the inner spans are found by CLASS in
+    // updateHud, so the class goes in the 3rd slot (id must be null).
+    el('div', null, 'crew-face', c);
+    const cb = el('div', null, 'crew-body', c);
+    el('div', null, 'crew-name', cb);
+    el('div', null, 'crew-ability', cb);
+    el('div', null, 'crew-price', c);
   }
-  return { cur, next: next || { name: 'MAX', at: cur.at } };
-}
-function standingLabel(v) {
-  if (v < 0) return 'HOSTILE';
-  if (v < 30) return 'COLD';
-  if (v < 70) return 'NEUTRAL';
-  if (v < 100) return 'WARM';
-  return 'ALLY';
-}
-function ammoText(g, w) {
-  if (!g.player.weapons[w.slot]) return 'LOCKED';
-  if (w.ammo === Infinity) return '∞';
-  const cur = g.player.ammo[w.slot];
-  return `${cur}/${w.ammo}`;
-}
-
-function paintBanner(g) {
-  const c = ctxOf(g);
-  const x = 16, y = 16, w = 400, h = 128;
-  if (g.hud.bannerT > 0 && g.hud.banner) {
-    panel(c, x, y, w, h);
-    c.fillStyle = '#ffd166';
-    c.fillRect(x, y, 4, h);
-    word(c, g.hud.banner, x + 16, y + 28, 20, '#ffd166', true);
-    const obj = g.objectiveText || '';
-    const lines = wrap(c, obj, w - 32, 16);
-    word(c, lines[0] || '', x + 16, y + 52, 16, '#ffffff');
-    if (lines[1]) word(c, lines[1], x + 16, y + 72, 16, '#ffffff');
-    // Stage bar + timer + job counter.
-    const total = missionSteps(g);
-    const stage = Math.min(g.mission.step + 1, total);
-    word(c, `STAGE ${stage}/${total}`, x + 16, y + 100, 13, '#9fb4ff', true);
-    bar(c, x + 100, y + 88, 180, 10, g.mission.step / Math.max(1, total), '#ffd166');
-    word(c, fmtTime(g.mission.timer), x + 300, y + 100, 14, '#ffffff', true);
-    word(c, `JOB ${Math.min(g.mission.index + 1, 12)}/12`, x + 360, y + 100, 13, '#9fb4ff', true);
-  } else {
-    panel(c, x, y, w, 44);
-    word(c, g.objectiveText || '', x + 14, y + 29, 16, '#ffffff');
+  const wp = el('div', 'weapons', 'panel', tr);
+  el('div', 'weapons-head', null, wp);
+  const wlist = el('div', 'weapons-list', null, wp);
+  for (let i = 0; i < 7; i += 1) {
+    const w = el('div', 'weapon-slot-' + i, 'weapon-slot', wlist);
+    el('span', null, 'weapon-num', w);
+    el('span', null, 'weapon-name', w);
+    el('span', null, 'weapon-ammo', w);
   }
+
+  const bl = el('div', 'hud-bl', null, hud);
+  const mm = el('canvas', 'minimap', null, bl);
+  mm.width = 190; mm.height = 190;
+  el('div', 'minimap-label', null, bl);
+
+  el('div', 'leo', 'panel', hud);
+  const br = el('div', 'hud-br', null, hud);
+  const speed = el('div', 'speed', 'panel', br);
+  el('div', 'speed-num', null, speed);
+  el('div', 'speed-car', null, speed);
+  el('div', 'speed-cond', null, speed);
+  el('div', 'health-bar', null, speed);
+  el('div', 'armour-bar', null, speed);
+
+  el('div', 'wheel', 'panel', hud);
+  el('div', 'shopmenu', 'panel', hud);
+  el('div', 'pause-ov', null, hud);
+  g.hudEls = { hud, banner, disp, tc, tr, bl, br, mm };
+  g.leoIdx = 0; g.leoT = 0; g.trackIdx = 0;
 }
-function missionSteps(g) {
-  const steps = [3, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2];
-  return steps[Math.min(g.mission.index, 11)] || 2;
+
+function stars(n) {
+  let s = '';
+  for (let i = 0; i < 5; i += 1) s += i < n ? '★' : '☆';
+  return s;
 }
-function wrap(c, text, maxW, size) {
-  c.font = `${size}px system-ui, sans-serif`;
-  const words = String(text).split(' ');
-  const lines = [''];
-  for (const wd of words) {
-    const test = lines[lines.length - 1] ? `${lines[lines.length - 1]} ${wd}` : wd;
-    if (c.measureText(test).width > maxW && lines[lines.length - 1]) lines.push(wd);
-    else lines[lines.length - 1] = test;
+
+function mmss(sec) {
+  const s = Math.max(0, Math.ceil(sec));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+export function updateHud(g) {
+  const d = document;
+  const q = (id) => d.getElementById(id);
+  const def = MISSION_DEFS[g.mission.index] || MISSION_DEFS[0];
+  // Banner (mission block, 3 lines).
+  const title = g.hud.bannerT > 0 && g.hud.banner ? g.hud.banner : `MISSION ${g.mission.index + 1} · ${def.name.toUpperCase()}`;
+  q('banner-title').textContent = title;
+  q('banner-obj').textContent = g.objectiveText || def.steps[0].text;
+  const stageTotal = def.steps.length;
+  const stageNow = Math.min(g.mission.step + 1, stageTotal);
+  q('banner-stage').textContent = `STAGE ${stageNow}/${stageTotal}`;
+  q('banner-stage').style.setProperty('--fill', `${Math.round((g.mission.step / stageTotal) * 100)}%`);
+  q('banner-timer').textContent = mmss(g.mission.timeLeft);
+  q('banner-job').textContent = `JOB ${g.mission.index + 1}/16`;
+  // Dispatch panel: 6 named units, distances from live cops when present.
+  q('dispatch-head').textContent = 'KPD RESPONSE — 6 UNITS';
+  for (let i = 0; i < 6; i += 1) {
+    const u = DISPATCH_UNITS[i];
+    const cop = g.cops.find((c) => c.name === u.name);
+    const dist = cop ? `${Math.round(Math.hypot(cop.x - g.player.x, cop.z - g.player.z))}m` : 'STANDBY';
+    q('dispatch-unit-' + i).textContent = `${u.name} ${u.role} — ${dist}`;
   }
-  return lines.slice(0, 2);
-}
-
-function paintClockPlate(g) {
-  const c = ctxOf(g);
-  const x = 440, y = 16, w = 400, h = 44;
-  panel(c, x, y, w, h, 0.78);
-  const line = `${g.clockText} · ${g.phaseName} / ${g.weather.kind.toUpperCase()} / ${RADIO_LINE}`;
-  word(c, line, x + w / 2, y + 28, 15, '#ffffff', true, 'center');
-}
-
-function paintInSight(g) {
-  if (!g.heli || !g.heli.locked) return;
-  const c = ctxOf(g);
-  const x = 440, y = 68, w = 400, h = 32;
-  c.fillStyle = 'rgba(200,20,20,0.85)';
-  c.fillRect(x, y, w, h);
-  c.strokeStyle = '#ff8888';
-  c.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-  word(c, 'IN SIGHT — Air One has you in the light', x + w / 2, y + 22, 15, '#ffffff', true, 'center');
-}
-
-function paintDispatch(g) {
-  const c = ctxOf(g);
-  if (g.player.wanted <= 0 || g.cops.length === 0) return;
-  const x = 16, y = 152, w = 400;
-  const rows = g.cops.slice(0, 6);
-  const h = 34 + rows.length * 24 + 10;
-  panel(c, x, y, w, h);
-  word(c, `KPD RESPONSE — ${g.cops.length} UNITS`, x + 14, y + 26, 16, '#ff6b6b', true);
-  rows.forEach((cop, i) => {
-    const d = Math.round(Math.hypot(cop.x - g.player.x, cop.z - g.player.z));
-    word(c, `${cop.callsign} · ${cop.role}`, x + 14, y + 52 + i * 24, 14, '#ffffff');
-    word(c, `${d}m`, x + w - 14, y + 52 + i * 24, 14, '#ffd166', false, 'right');
-  });
-  if (g.cops.length > 6) word(c, `+${g.cops.length - 6} more`, x + 14, y + h - 8, 13, '#9fb4ff');
-}
-
-function paintRightPanel(g) {
-  const c = ctxOf(g);
-  const x = 880, y = 16, w = 384, h = 188;
-  panel(c, x, y, w, h);
-  // Cash + stars.
-  word(c, `$${fmtNum(g.player.cash)}`, x + 14, y + 30, 24, '#ffd166', true);
-  let stars = '';
-  for (let i = 0; i < 5; i += 1) stars += i < g.player.wanted ? '★' : '☆';
-  word(c, stars, x + w - 14, y + 30, 22, '#ffd166', false, 'right');
-  // Rank.
-  const { rp, grade } = rankGrade(g);
-  const nextGrade = RANK_GRADES.find((r) => r.at > rp);
-  const ri = respectInfo(g);
-  word(c, `RANK ${grade.g}`, x + 14, y + 62, 26, '#ffffff', true);
-  word(c, ri.cur.name, x + 110, y + 62, 20, '#7dd8ff', true);
-  const rpFrac = nextGrade ? (rp - grade.at) / (nextGrade.at - grade.at) : 1;
-  bar(c, x + 14, y + 72, w - 28, 10, rpFrac, '#ffd166');
-  word(c, `${fmtNum(rp)} / ${nextGrade ? fmtNum(nextGrade.at) : 'MAX'} RP`, x + w - 14, y + 96, 12, '#cccccc', false, 'right');
-  // District standing.
-  const d = g.city.districtAt(g.player.x, g.player.z);
-  const st = g.player.districtStanding[d.id] || 0;
-  word(c, `${d.name.toUpperCase()} · ${standingLabel(st)} ${st}`, x + 14, y + 120, 14, '#ffffff', true);
-  bar(c, x + 14, y + 128, w - 28, 8, st / 100, '#7dff8a');
-  // Respect progress.
-  word(c, `${ri.cur.name} ${fmtNum(g.player.respect)}/${fmtNum(ri.next.at)} RESPECT`, x + 14, y + 152, 14, '#ffffff', true);
-  const rFrac = (g.player.respect - ri.cur.at) / Math.max(1, ri.next.at - ri.cur.at);
-  bar(c, x + 14, y + 160, w - 28, 8, rFrac, '#7dd8ff');
-  word(c, `EMPIRE $${fmtNum(g.empire.totalEarned)} EARNED`, x + 14, y + 180, 12, '#9fb4ff');
-}
-
-function paintCrewCards(g) {
-  const c = ctxOf(g);
-  const x = 880, y = 226, w = 384, h = 56;
-  word(c, 'CREW', x, y - 6, 13, '#9fb4ff', true);
-  CREW.forEach((crew, i) => {
-    const cy = y + i * (h + 6);
-    const hired = !!g.roster.hired[crew.id];
-    panel(c, x, cy, w, h, hired ? 0.78 : 0.45);
-    // Portrait — a coloured disc with the initial.
-    c.beginPath();
-    c.arc(x + 28, cy + h / 2, 18, 0, Math.PI * 2);
-    c.fillStyle = hired ? '#2d6a4f' : '#444a55';
-    c.fill();
-    c.strokeStyle = '#ffffff';
-    c.stroke();
-    word(c, crew.name[0], x + 28, cy + h / 2 + 7, 18, '#ffffff', true, 'center');
-    word(c, `${crew.name} · ${crew.role}`, x + 54, cy + 22, 15, '#ffffff', true);
-    word(c, `${crew.ability}  [${crew.key}]`, x + 54, cy + 42, 13, hired ? '#ffd166' : '#888888');
-    const cd = g.roster.cooldowns[crew.id] || 0;
-    if (hired && cd > 0) {
-      word(c, `READY IN ${Math.ceil(cd)}s`, x + w - 14, cy + 42, 13, '#ff6b6b', false, 'right');
-    } else if (!hired) {
-      word(c, `$${fmtNum(crew.price)}`, x + w - 14, cy + 22, 14, '#ffd166', false, 'right');
-    } else {
-      word(c, 'READY', x + w - 14, cy + 22, 13, '#7dff8a', false, 'right');
+  // Clock plate + IN SIGHT alert.
+  const track = RADIO.tracks[g.trackIdx % RADIO.tracks.length];
+  q('clockplate').textContent = `${clockLabel(g)} / ${g.weather.kind.toUpperCase()} / ${RADIO.station} — ${track}`;
+  const alert = q('alert-insight');
+  alert.style.display = g.heli.locked ? 'block' : 'none';
+  alert.textContent = 'IN SIGHT — Air One has you in the light';
+  // Cash + stars + rank panel.
+  q('cashstars').textContent = `$${g.player.cash}   ${stars(g.player.wanted)}`;
+  const { cur, next } = rankFor(g.player.rp);
+  q('rank-line').textContent = `RANK ${cur.letter}  ${cur.title}`;
+  q('rank-bar').textContent = next ? `${g.player.rp}/${next.rp} RP` : `${g.player.rp} RP — MAX`;
+  const dist = g.city.districtAt(g.player.x, g.player.z);
+  const st = g.player.districtStanding[dist.name] || 0;
+  q('district-line').textContent = `${dist.name.toUpperCase()} · ${standingLabel(st)} ${st}`;
+  q('respect-line').textContent = `${cur.title} ${g.player.respect}/250 RESPECT`;
+  q('empire-line').textContent = `EMPIRE $${g.empire.totalEarned} EARNED`;
+  // Crew cards.
+  q('crew-head').textContent = 'CREW';
+  for (let i = 0; i < 3; i += 1) {
+    const c = CREW_DEFS[i];
+    const hired = !!g.roster.hired[c.id];
+    q('crew-card-' + i).querySelector('.crew-face').textContent = c.name[0];
+    q('crew-card-' + i).querySelector('.crew-name').textContent = `${c.name} · ${c.role}`;
+    q('crew-card-' + i).querySelector('.crew-ability').textContent = `${c.ability} [${c.key}]`;
+    q('crew-card-' + i).querySelector('.crew-price').textContent = hired ? 'READY' : `$${c.price.toLocaleString()}`;
+  }
+  // Weapons.
+  q('weapons-head').textContent = 'WEAPONS — hold Q for wheel';
+  for (let i = 0; i < 7; i += 1) {
+    const slot = q('weapon-slot-' + i);
+    slot.querySelector('.weapon-num').textContent = i + 1;
+    slot.querySelector('.weapon-name').textContent = WEAPONS[i].name;
+    slot.querySelector('.weapon-ammo').textContent = weaponAmmoText(g, i);
+    slot.classList.toggle('active', g.player.weapon === i);
+  }
+  // LEO dialogue (rotates).
+  g.leoT += 0.1;
+  if (g.leoT > 8) { g.leoT = 0; g.leoIdx = (g.leoIdx + 1) % LEO_LINES.length; }
+  q('leo').textContent = LEO_LINES[g.leoIdx];
+  // Speed block.
+  const car = g.car;
+  const kmh = car ? Math.round(Math.abs(car.speed) * 3.6) : 0;
+  q('speed-num').textContent = kmh;
+  q('speed-car').textContent = car ? `${car.label}   ${Math.round((car.health / car.maxHealth) * 100)}% CONDITION` : 'ON FOOT';
+  q('speed-cond').textContent = car ? (car.health > 70 ? 'PRISTINE' : car.health > 35 ? 'DAMAGED' : 'WRECKED') : '—';
+  q('health-bar').textContent = `HEALTH ${Math.round(g.player.health)}`;
+  q('armour-bar').textContent = `ARMOUR ${g.garage.armor === 0 ? 'None' : 'L' + g.garage.armor}`;
+  // Minimap label.
+  q('minimap-label').textContent = dist.name.toUpperCase();
+  drawMinimap(g);
+  // Wheel overlay.
+  const wheel = q('wheel');
+  if (g.wheel.open) {
+    wheel.style.display = 'block';
+    let html = '<div class="wheel-head">WEAPON WHEEL</div>';
+    for (let i = 0; i < 7; i += 1) {
+      html += `<div class="wheel-row${g.wheel.selected === i ? ' sel' : ''}">${i + 1} · ${WEAPONS[i].name} — ${weaponAmmoText(g, i)}</div>`;
     }
-  });
+    wheel.innerHTML = html;
+  } else wheel.style.display = 'none';
+  // Shop menu overlay.
+  const sm = q('shopmenu');
+  if (g.shopOpen) {
+    sm.style.display = 'block';
+    sm.innerHTML = shopMenuHtml(g);
+  } else sm.style.display = 'none';
+  // Pause overlay.
+  const pv = q('pause-ov');
+  pv.style.display = g.paused ? 'block' : 'none';
+  pv.textContent = g.paused ? 'PAUSED — game saved' : '';
 }
 
-function paintWeapons(g) {
-  const c = ctxOf(g);
-  const x = 880, y = 410, w = 384;
-  const h = 26 + WEAPONS.length * 20 + 6;
-  panel(c, x, y, w, h);
-  word(c, 'WEAPONS — hold Q for wheel', x + 14, y + 20, 13, '#9fb4ff', true);
-  WEAPONS.forEach((wpn, i) => {
-    const wy = y + 26 + i * 20;
-    const owned = !!g.player.weapons[wpn.slot];
-    const sel = g.player.weapon === wpn.slot;
-    if (sel) {
-      c.fillStyle = 'rgba(255,209,102,0.18)';
-      c.fillRect(x + 4, wy, w - 8, 18);
+function shopMenuHtml(g) {
+  const o = g.shopOpen;
+  const disc = crewDiscount(g);
+  let h = `<div class="shop-head">${o.label || o.kind}</div>`;
+  if (o.kind === 'garage') {
+    const e = g.garage.engine, a = g.garage.armor;
+    h += `<div>[1] Engine Tier ${e + 1} — $${e < 3 ? Math.round(GARAGE_PRICES.engine[e] * disc) : 'MAX'}</div>`;
+    h += `<div>[2] Armour Tier ${a + 1} — $${a < 2 ? Math.round(GARAGE_PRICES.armor[a] * disc) : 'MAX'}</div>`;
+    h += `<div>[3] Nitro +1 — $${GARAGE_PRICES.nitro}</div>`;
+  } else if (o.kind === 'venture') {
+    h += `<div>[1] Buy this business</div>`;
+  } else if (o.kind === 'crew') {
+    h += `<div>[1] Hire Milo — $900</div><div>[2] Hire Vera — $1,400</div><div>[3] Hire Tank — $1,800</div>`;
+  } else if (o.kind === 'races') {
+    h += `<div>[1] Beach Drag — $${RACE_DEFS.drag.fee} (win $${RACE_DEFS.drag.prize})</div>`;
+    h += `<div>[2] Marina Sprint — $${RACE_DEFS.sprint.fee} (win $${RACE_DEFS.sprint.prize})</div>`;
+    h += `<div>[3] Strip Circuit — $${RACE_DEFS.circuit.fee} (win $${RACE_DEFS.circuit.prize})</div>`;
+  } else if (o.kind === 'gun') {
+    h += `<div>[1] Pistol — $300</div><div>[2] SMG — $800</div><div>[3] Shotgun — $1,200</div><div>[4] Rifle — $2,000</div><div>[5] RPG — $5,000</div>`;
+  }
+  h += `<div class="shop-foot">E — close</div>`;
+  return h;
+}
+
+function drawMinimap(g) {
+  const cv = document.getElementById('minimap');
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
+  const S = 190, W = 440;
+  const to = (x, z) => [((x + 220) / W) * S, ((z + 220) / W) * S];
+  ctx.fillStyle = '#0a0f1a';
+  ctx.fillRect(0, 0, S, S);
+  // Water + sand (east).
+  const [wx] = to(195, 0);
+  ctx.fillStyle = '#1d5f7a';
+  ctx.fillRect(wx, 0, S - wx, S);
+  const [sx] = to(165, 0);
+  ctx.fillStyle = '#c9b183';
+  ctx.fillRect(sx, 0, wx - sx, S);
+  // Blocks.
+  ctx.fillStyle = '#1c2436';
+  for (let bx = -187; bx <= 187; bx += 75) {
+    for (let bz = -187; bz <= 187; bz += 75) {
+      const [x, y] = to(bx - 25, bz - 25);
+      ctx.fillRect(x, y, 50 / W * S, 50 / W * S);
     }
-    word(c, `${wpn.slot + 1}`, x + 14, wy + 14, 13, sel ? '#ffd166' : '#aaaaaa', true);
-    word(c, wpn.name, x + 34, wy + 14, 14, owned ? '#ffffff' : '#777777', sel);
-    word(c, ammoText(g, wpn), x + w - 14, wy + 14, 14, owned ? '#ffd166' : '#777777', false, 'right');
-  });
-}
-
-function paintMinimap(g) {
-  const c = ctxOf(g);
-  const x = 16, y = 500, w = 200, h = 200;
-  panel(c, x, y, w, h, 0.8);
-  // Beach + sea on the west edge.
-  c.fillStyle = '#e8d5a3';
-  c.fillRect(x + 2, y + 2, 12, h - 4);
-  c.fillStyle = '#1e6f9e';
-  c.fillRect(x + 2, y + 2, 5, h - 4);
-  const mx = (wx) => x + 14 + ((wx + 260) / 450) * (w - 28);
-  const mz = (wz) => y + 14 + ((wz + 190) / 380) * (h - 28);
-  // Streets.
-  c.strokeStyle = 'rgba(255,255,255,0.35)';
-  c.lineWidth = 2;
-  for (const ax of g.city.avenues) {
-    c.beginPath(); c.moveTo(mx(ax), y + 14); c.lineTo(mx(ax), y + h - 14); c.stroke();
   }
-  for (const sz of g.city.streets) {
-    c.beginPath(); c.moveTo(x + 14, mz(sz)); c.lineTo(x + w - 14, mz(sz)); c.stroke();
+  // Roads.
+  ctx.strokeStyle = '#5a6a86';
+  ctx.lineWidth = 3;
+  for (const r of g.city.roadsX) {
+    const [x] = to(r, 0);
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, S); ctx.stroke();
   }
-  // Shops.
-  c.fillStyle = '#ffd166';
-  for (const s of Object.values(g.city.spots)) {
-    c.fillRect(mx(s.x) - 2, mz(s.z) - 2, 4, 4);
+  for (const r of g.city.roadsZ) {
+    const [, y] = to(0, r);
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(S, y); ctx.stroke();
   }
-  // Mission marker — a yellow diamond on the current target.
-  const def = g.mission.index < 12 ? MISSIONS[g.mission.index] : null;
+  // Hidden packages.
+  ctx.fillStyle = '#4caf50';
+  for (const s of g.packages.spots) {
+    if (s.got) continue;
+    const [x, y] = to(s.x, s.z);
+    ctx.fillRect(x - 2, y - 2, 4, 4);
+  }
+  // Mission target.
+  const def = MISSION_DEFS[g.mission.index];
   if (def) {
     const step = def.steps[Math.min(g.mission.step, def.steps.length - 1)];
-    const spot = step && step.spot ? g.city.spots[step.spot] : null;
-    if (spot) {
-      c.fillStyle = '#ffd166';
-      c.beginPath();
-      c.moveTo(mx(spot.x), mz(spot.z) - 6);
-      c.lineTo(mx(spot.x) + 6, mz(spot.z));
-      c.lineTo(mx(spot.x), mz(spot.z) + 6);
-      c.lineTo(mx(spot.x) - 6, mz(spot.z));
-      c.closePath();
-      c.fill();
+    const sp = g.city.spots[step.spot] || (step.spot === 'beach' ? { x: 175, z: 60 } : null);
+    if (sp) {
+      const [x, y] = to(sp.x, sp.z);
+      ctx.fillStyle = '#f2b705';
+      ctx.beginPath(); ctx.moveTo(x, y - 6); ctx.lineTo(x + 6, y); ctx.lineTo(x, y + 6); ctx.lineTo(x - 6, y); ctx.closePath(); ctx.fill();
     }
   }
-  // Cops in red, player in white.
-  c.fillStyle = '#ff4444';
-  for (const cop of g.cops) c.fillRect(mx(cop.x) - 2, mz(cop.z) - 2, 4, 4);
-  if (g.heli) {
-    c.fillStyle = '#7dd8ff';
-    c.beginPath(); c.arc(mx(g.heli.x), mz(g.heli.z), 4, 0, Math.PI * 2); c.fill();
+  // Cops.
+  ctx.fillStyle = '#ff5252';
+  for (const c of g.cops) {
+    const [x, y] = to(c.x, c.z);
+    ctx.beginPath(); ctx.arc(x, y, 3, 0, 7); ctx.fill();
   }
-  c.fillStyle = '#ffffff';
-  c.beginPath(); c.arc(mx(g.player.x), mz(g.player.z), 4, 0, Math.PI * 2); c.fill();
-  // North arrow.
-  word(c, 'N', x + w - 14, y + 16, 13, '#ffffff', true);
-  c.beginPath(); c.moveTo(x + w - 10, y + 20); c.lineTo(x + w - 10, y + 32); c.strokeStyle = '#ffffff'; c.stroke();
-  const d = g.city.districtAt(g.player.x, g.player.z);
-  word(c, d.name.toUpperCase(), x, y + h + 16, 13, '#ffffff', true);
-}
-
-function paintDialogue(g) {
-  const c = ctxOf(g);
-  if (g.hud.dialogT <= 0 || !g.hud.dialog) return;
-  const x = 340, y = 616, w = 600, h = 62;
-  panel(c, x, y, w, h, 0.8);
-  c.beginPath();
-  c.arc(x + 32, y + h / 2, 18, 0, Math.PI * 2);
-  c.fillStyle = '#1d3557';
-  c.fill();
-  c.strokeStyle = '#ffffff';
-  c.stroke();
-  word(c, 'K', x + 32, y + h / 2 + 7, 18, '#ffffff', true, 'center');
-  const lines = wrap(c, g.hud.dialog, w - 90, 15);
-  word(c, lines[0] || '', x + 58, y + 28, 15, '#ffffff');
-  if (lines[1]) word(c, lines[1], x + 58, y + 48, 15, '#ffffff');
-}
-
-function paintSpeed(g) {
-  const c = ctxOf(g);
-  const x = 1000, y = 588, w = 264, h = 126;
-  panel(c, x, y, w, h, 0.66);
-  if (g.car) {
-    const kmh = Math.round(Math.abs(g.car.speed) * 3.6);
-    word(c, String(kmh), x + 14, y + 48, 44, '#ffffff', true);
-    word(c, 'KM/H', x + 130, y + 48, 18, '#9fb4ff', true);
-    const cond = Math.round((g.car.health / g.car.maxHealth) * 100);
-    const dent = Math.round((1 - g.car.health / g.car.maxHealth) * 100);
-    word(c, g.car.model.toUpperCase(), x + 14, y + 70, 15, '#ffd166', true);
-    word(c, `${cond}% CONDITION`, x + w - 14, y + 70, 13, '#ffffff', false, 'right');
-    bar(c, x + 14, y + 78, w - 28, 8, g.car.health / g.car.maxHealth, cond > 50 ? '#7dff8a' : cond > 25 ? '#ffd166' : '#ff4444');
-    word(c, dent > 0 ? `${dent}% DENTED` : 'PRISTINE', x + 14, y + 98, 12, '#cccccc');
-    if (g.garage.nitro > 0) word(c, `NITRO ×${g.garage.nitro}`, x + w - 14, y + 98, 12, '#7dd8ff', false, 'right');
-  } else {
-    word(c, 'ON FOOT', x + 14, y + 48, 26, '#ffffff', true);
+  // Heli.
+  if (g.heli.active) {
+    const [x, y] = to(g.heli.x, g.heli.z);
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(x, y, 3, 0, 7); ctx.fill();
   }
-  // Health row.
-  word(c, 'HEALTH', x + 14, y + 112, 11, '#9fb4ff', true);
-  bar(c, x + 72, y + 102, 120, 8, g.player.health / 100, '#7dff8a');
-  word(c, `${Math.round(g.player.health)}`, x + 198, y + 112, 11, '#ffffff');
-  // Armour row.
-  word(c, 'ARMOUR', x + 14, y + 124, 11, '#9fb4ff', true);
-  bar(c, x + 72, y + 114, 120, 8, g.garage.armor / 2, '#7dd8ff');
-  word(c, armorLabel(g.garage.armor), x + 198, y + 124, 11, '#ffffff');
-}
-
-function paintWheel(g) {
-  const c = ctxOf(g);
-  const cx = W / 2, cy = H / 2, r = 130;
-  c.fillStyle = 'rgba(8,10,18,0.8)';
-  c.beginPath(); c.arc(cx, cy, r, 0, Math.PI * 2); c.fill();
-  c.strokeStyle = 'rgba(255,255,255,0.4)';
-  c.stroke();
-  word(c, 'WEAPON WHEEL', cx, cy - r - 12, 16, '#ffffff', true, 'center');
-  WEAPONS.forEach((wpn, i) => {
-    const a = -Math.PI / 2 + (i / WEAPONS.length) * Math.PI * 2;
-    const sx = cx + Math.cos(a) * 88;
-    const sy = cy + Math.sin(a) * 88;
-    const owned = !!g.player.weapons[wpn.slot];
-    const sel = g.player.weapon === wpn.slot;
-    c.beginPath();
-    c.arc(sx, sy, sel ? 26 : 21, 0, Math.PI * 2);
-    c.fillStyle = sel ? '#ffd166' : 'rgba(255,255,255,0.12)';
-    c.fill();
-    c.strokeStyle = '#ffffff';
-    c.stroke();
-    word(c, wpn.name, sx, sy - 4, 11, sel ? '#000000' : '#ffffff', true, 'center');
-    word(c, owned ? ammoText(g, wpn) : 'LOCKED', sx, sy + 10, 10, sel ? '#000000' : '#cccccc', false, 'center');
-  });
-}
-
-function paintShop(g) {
-  const c = ctxOf(g);
-  const s = g.shopOpen;
-  if (!s) return;
-  const w = 560, h = 320, x = (W - w) / 2, y = (H - h) / 2;
-  panel(c, x, y, w, h, 0.92);
-  const title = { garage: 'GARAGE', venture: 'EMPIRE — BUY A BUSINESS', crew: 'CREW OFFICE — HIRE', races: 'RACE OFFICE', weapons: 'GUN STORE' }[s.kind] || s.kind.toUpperCase();
-  word(c, title, x + 20, y + 34, 20, '#ffd166', true);
-  word(c, `$${fmtNum(g.player.cash)}`, x + w - 20, y + 34, 18, '#ffffff', false, 'right');
-  const lines = s.menu || [];
-  lines.forEach((ln, i) => {
-    word(c, ln, x + 20, y + 70 + i * 26, 16, '#ffffff');
-  });
-  word(c, 'Press the number key, or ESC to walk away', x + 20, y + h - 16, 13, '#9fb4ff');
-}
-
-function paintPause(g) {
-  const c = ctxOf(g);
-  c.fillStyle = 'rgba(0,0,0,0.6)';
-  c.fillRect(0, 0, W, H);
-  word(c, 'PAUSED', W / 2, H / 2 - 10, 44, '#ffffff', true, 'center');
-  word(c, 'Progress saved — press P to keep playing', W / 2, H / 2 + 30, 16, '#cccccc', false, 'center');
-}
-
-export function paintHud(g) {
-  const c = ctxOf(g);
-  if (!c) return;
-  c.clearRect(0, 0, W, H);
-  // Damage flash.
-  if (g.flash > 0) {
-    c.fillStyle = `rgba(255,255,255,${Math.min(0.85, g.flash)})`;
-    c.fillRect(0, 0, W, H);
-  }
-  if (g.player.health < 30) {
-    c.strokeStyle = 'rgba(255,40,40,0.55)';
-    c.lineWidth = 14;
-    c.strokeRect(7, 7, W - 14, H - 14);
-  }
-  paintBanner(g);
-  paintClockPlate(g);
-  paintInSight(g);
-  paintDispatch(g);
-  paintRightPanel(g);
-  paintCrewCards(g);
-  paintWeapons(g);
-  paintMinimap(g);
-  paintDialogue(g);
-  paintSpeed(g);
-  if (g.hud.noteT > 0 && g.hud.note) {
-    word(c, g.hud.note, W / 2, 600, 15, '#ffd166', true, 'center');
-  }
-  if (g.wheel.open) paintWheel(g);
-  if (g.shopOpen) paintShop(g);
-  if (g.paused) paintPause(g);
+  // Player arrow.
+  const [px, py] = to(g.player.x, g.player.z);
+  ctx.fillStyle = '#ffffff';
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate(-g.player.heading);
+  ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(4, 5); ctx.lineTo(-4, 5); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // North marker.
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillText('N', S - 14, 14);
 }

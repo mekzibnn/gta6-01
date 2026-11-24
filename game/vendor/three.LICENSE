@@ -1,6 +1,8 @@
+SPDX-License-Identifier: MIT
+
 MIT License
 
-Copyright (c) 2010-2024 Three.js Authors
+Copyright (c) 2010-2026 Three.js Authors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -20,6 +22,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-SPDX-License-Identifier: MIT
-
-Note: vendored three.js build used by Solmar Heat (gta 06 v11), unmodified.
+---
+Note (Solmar Heat v12, gta6-01): three.js r187 module build bundled in
+game/vendor/ (three.module.min.js re-exports three.core.min.js). The library
+itself is untouched; this file was rewritten in-session for the v12 blind
+rewrite so the entry carries a fresh witnessed copy.

@@ -1,55 +1,54 @@
-// Save / load for Solmar Heat — localStorage key 'solmar-heat.save.v2'.
-import { SAVE_KEY } from './config.js';
+// Solmar Heat v12 — save/load (localStorage, key solmar-heat.save.v2).
+const KEY = 'solmar-heat.save.v2';
 
 export function writeSave(g) {
   try {
     const s = {
-      v: 2,
-      player: {
-        cash: g.player.cash, health: g.player.health, wanted: g.player.wanted,
-        weapon: g.player.weapon, weapons: g.player.weapons.slice(),
-        ammo: JSON.parse(JSON.stringify(g.player.ammo)),
-        districtStanding: { ...g.player.districtStanding },
-        respect: g.player.respect,
-        x: g.player.x, z: g.player.z,
-      },
-      mission: { index: g.mission.index, step: g.mission.step, done: g.mission.done.slice() },
-      garage: { ...g.garage },
-      empire: { owned: JSON.parse(JSON.stringify(g.empire.owned)), totalEarned: g.empire.totalEarned },
-      roster: { hired: JSON.parse(JSON.stringify(g.roster.hired)) },
+      cash: g.player.cash,
+      health: g.player.health,
+      wanted: g.player.wanted,
+      mission: { index: g.mission.index, done: g.mission.done.slice() },
+      empire: { owned: g.empire.owned, totalEarned: g.empire.totalEarned },
+      roster: { hired: g.roster.hired },
       streetRaces: { won: g.streetRaces.won, best: { ...g.streetRaces.best } },
       districtStanding: { ...g.player.districtStanding },
+      garage: { ...g.garage },
+      rp: g.player.rp,
+      respect: g.player.respect,
       stats: { ...g.stats },
-      clockHour: g.clock.hour,
+      clock: { hour: g.clock.hour },
+      packages: g.packages.found,
     };
-    localStorage.setItem(SAVE_KEY, JSON.stringify(s));
+    localStorage.setItem(KEY, JSON.stringify(s));
     return true;
   } catch { return false; }
 }
 
-export function readSave() {
+export function loadSave(g) {
   try {
-    const raw = localStorage.getItem(SAVE_KEY);
-    if (!raw) return null;
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return false;
     const s = JSON.parse(raw);
-    return s && s.v === 2 ? s : null;
-  } catch { return null; }
-}
-
-export function applySave(g, s) {
-  if (!s) return;
-  Object.assign(g.player, {
-    cash: s.player.cash, health: s.player.health, wanted: 0,
-    weapon: s.player.weapon, weapons: s.player.weapons.slice(),
-    ammo: s.player.ammo, respect: s.player.respect,
-  });
-  g.player.districtStanding = { ...g.player.districtStanding, ...s.player.districtStanding };
-  g.mission.index = s.mission.index; g.mission.step = s.mission.step;
-  g.mission.done = s.mission.done.slice();
-  Object.assign(g.garage, s.garage);
-  g.empire.owned = s.empire.owned; g.empire.totalEarned = s.empire.totalEarned;
-  g.roster.hired = s.roster.hired;
-  g.streetRaces.won = s.streetRaces.won; g.streetRaces.best = s.streetRaces.best;
-  Object.assign(g.stats, s.stats);
-  g.clock.hour = s.clockHour;
+    if (!s || typeof s !== 'object') return false;
+    if (typeof s.cash === 'number') g.player.cash = s.cash;
+    if (s.mission) {
+      if (typeof s.mission.index === 'number') g.mission.index = Math.min(s.mission.index, 15);
+      if (Array.isArray(s.mission.done)) g.mission.done = s.mission.done.slice();
+    }
+    if (s.empire) {
+      if (s.empire.owned) g.empire.owned = s.empire.owned;
+      if (typeof s.empire.totalEarned === 'number') g.empire.totalEarned = s.empire.totalEarned;
+    }
+    if (s.roster && s.roster.hired) g.roster.hired = s.roster.hired;
+    if (s.streetRaces) {
+      if (typeof s.streetRaces.won === 'number') g.streetRaces.won = s.streetRaces.won;
+      if (s.streetRaces.best) g.streetRaces.best = s.streetRaces.best;
+    }
+    if (s.districtStanding) g.player.districtStanding = { ...g.player.districtStanding, ...s.districtStanding };
+    if (s.garage) g.garage = { ...g.garage, ...s.garage };
+    if (typeof s.rp === 'number') g.player.rp = s.rp;
+    if (typeof s.respect === 'number') g.player.respect = s.respect;
+    if (s.clock && typeof s.clock.hour === 'number') g.clock.hour = s.clock.hour;
+    return true;
+  } catch { return false; }
 }

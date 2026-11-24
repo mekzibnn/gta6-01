@@ -1,33 +1,37 @@
-// Audio — tiny WebAudio bleeps, fully guarded so a headless run or a
-// missing AudioContext can never throw.
-let ctx = null;
-function audio() {
-  if (ctx) return ctx;
-  try {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return null;
-    ctx = new AC();
-    return ctx;
-  } catch { return null; }
+// Solmar Heat v12 — radio: a tiny lazy synth pad (SOL FM 98.4). Silent unless it works.
+export function initAudio(g) {
+  g.audio = { ctx: null, started: false };
+  const start = () => {
+    if (g.audio.started) return;
+    g.audio.started = true;
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      g.audio.ctx = ctx;
+      const gain = ctx.createGain();
+      gain.gain.value = 0.04;
+      gain.connect(ctx.destination);
+      const freqs = [220, 277.18, 329.63];
+      const oscs = freqs.map((f) => {
+        const o = ctx.createOscillator();
+        o.type = 'sine';
+        o.frequency.value = f;
+        o.connect(gain);
+        o.start();
+        return o;
+      });
+      g.audio.oscs = oscs;
+      setInterval(() => {
+        if (!g.audio.ctx) return;
+        const roots = [220, 196, 174.61, 246.94];
+        const root = roots[Math.floor(g.time / 16) % roots.length];
+        oscs[0].frequency.setTargetAtTime(root, ctx.currentTime, 0.5);
+        oscs[1].frequency.setTargetAtTime(root * 1.26, ctx.currentTime, 0.5);
+        oscs[2].frequency.setTargetAtTime(root * 1.5, ctx.currentTime, 0.5);
+      }, 4000);
+    } catch { /* audio is decoration; never break the game */ }
+  };
+  window.addEventListener('keydown', start, { once: true });
+  window.addEventListener('pointerdown', start, { once: true });
 }
-function tone(freq, dur, type, gain) {
-  try {
-    const ac = audio();
-    if (!ac || ac.state === 'suspended') return;
-    const o = ac.createOscillator();
-    const g = ac.createGain();
-    o.type = type || 'square';
-    o.frequency.value = freq;
-    g.gain.value = gain || 0.04;
-    o.connect(g); g.connect(ac.destination);
-    o.start();
-    o.stop(ac.currentTime + dur);
-  } catch { /* silent */ }
-}
-export const sfx = {
-  click() { tone(660, 0.06, 'square', 0.03); },
-  buy() { tone(880, 0.08, 'sine', 0.05); tone(1320, 0.1, 'sine', 0.04); },
-  boom() { tone(70, 0.5, 'sawtooth', 0.09); },
-  siren() { tone(740, 0.18, 'sine', 0.02); tone(520, 0.18, 'sine', 0.02); },
-  honk() { tone(370, 0.12, 'square', 0.03); },
-};

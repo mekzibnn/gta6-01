@@ -1,138 +1,69 @@
-// Player on foot, wanted heat, KPD cops (RAM / PIT / patrol) and Air One.
-import { DISPATCH_NAMES, DISPATCH_ROLES } from './config.js';
+// Solmar Heat v12 — the player: on-foot movement, wanted heat, cash/health.
+import { WEAPONS } from './config.js';
 
-let nextCopId = 1000;
-
-function copCallsign(g) {
-  return DISPATCH_NAMES[g.cops.length % DISPATCH_NAMES.length];
-}
-function copRole(kind, idx) {
-  if (kind === 'ram') return 'RAMMING';
-  if (kind === 'pit') return 'PIT';
-  return DISPATCH_ROLES[(idx + 2) % DISPATCH_ROLES.length];
-}
-
-export function spawnCop(g, kind) {
-  const a = g.rng.range(0, Math.PI * 2);
-  const d = 70 + g.rng.range(0, 30);
-  const idx = g.cops.length;
-  const cop = {
-    id: nextCopId, kind,
-    callsign: copCallsign(g), role: copRole(kind, idx),
-    x: g.player.x + Math.cos(a) * d, z: g.player.z + Math.sin(a) * d,
-    heading: 0, speed: kind === 'pit' ? 26 : kind === 'ram' ? 24 : 20,
-    health: 100,
+export function makePlayer() {
+  return {
+    x: 0, z: 100, heading: 0, inCar: false,
+    wanted: 0, heatLock: false, lastCrime: -100,
+    cash: 500, health: 100, armor: 0,
+    weapons: [true, true, false, false, false, false, false],
+    weapon: 0,
+    ammo: { pistol: 60, smg: 60, shotgun: 24, rifle: 90, rpg: 4 },
+    districtStanding: { Downtown: 0, 'Old Town': 0, Marina: 0, Beachfront: 0, Hillside: 0 },
+    rp: 0, respect: 0, respectTitle: 'NOBODY',
   };
-  nextCopId += 1;
-  g.cops.push(cop);
-  return cop;
 }
 
-export function tickActors(g, dt) {
+export function updatePlayer(g, dt) {
   const p = g.player;
-  // On foot — WASD walks the street.
-  if (!p.inCar) {
-    const keys = g.input.keys;
+  const keys = g.keys;
+  if (!p.inCar && !g.paused && !g.staged) {
+    const sp = keys.shift ? 9 : 5.5;
     let mx = 0, mz = 0;
-    if (keys.has('KeyW') || keys.has('ArrowUp')) mz += 1;
-    if (keys.has('KeyS') || keys.has('ArrowDown')) mz -= 1;
-    if (keys.has('KeyA') || keys.has('ArrowLeft')) mx -= 1;
-    if (keys.has('KeyD') || keys.has('ArrowRight')) mx += 1;
+    if (keys.w) mz += 1;
+    if (keys.s) mz -= 1;
+    if (keys.a) mx -= 1;
+    if (keys.d) mx += 1;
     if (mx || mz) {
       const len = Math.hypot(mx, mz);
-      p.x += (mx / len) * 6.5 * dt;
-      p.z += (mz / len) * 6.5 * dt;
-      p.heading = Math.atan2(mx / len, mz / len);
-    }
-    p.x = Math.max(-260, Math.min(190, p.x));
-    p.z = Math.max(-190, Math.min(190, p.z));
-  } else if (g.car) {
-    p.x = g.car.x; p.z = g.car.z; p.heading = g.car.heading;
-  }
-
-  // Wanted heat — cools slowly, never while the Heat Wave locks it.
-  if (!g.heatLock && p.wanted > 0) {
-    g._heatT = (g._heatT || 0) + dt;
-    const interval = p.wanted >= 3 ? 30 : 18;
-    if (g._heatT >= interval) {
-      g._heatT = 0;
-      p.wanted = Math.max(0, p.wanted - 1);
+      const h = p.heading;
+      // Move relative to the facing direction.
+      const fx = Math.sin(h), fz = Math.cos(h);
+      const rx = Math.cos(h), rz = -Math.sin(h);
+      p.x += (fx * (mz / len) + rx * (mx / len)) * sp * dt;
+      p.z += (fz * (mz / len) + rz * (mx / len)) * sp * dt;
+      p.x = Math.max(-215, Math.min(215, p.x));
+      p.z = Math.max(-215, Math.min(215, p.z));
     }
   }
-  if (p.wanted === 0 && g.cops.length > 0) {
-    g.cops.length = 0;
-    g.heli = null;
-  }
-
-  // Dispatch — the KPD answers the heat; at three stars the specialists
-  // arrive, and Air One takes the sky.
-  const target = Math.min(p.wanted * 2, 6);
-  g._copT = (g._copT || 0) + dt;
-  if (p.wanted > 0 && g.cops.length < target && g._copT > 1.2) {
-    g._copT = 0;
-    let kind = 'patrol';
-    if (p.wanted >= 3) {
-      if (!g.cops.some((c) => c.kind === 'ram')) kind = 'ram';
-      else if (!g.cops.some((c) => c.kind === 'pit')) kind = 'pit';
-      else kind = g.rng.pick(['ram', 'pit', 'patrol']);
-    }
-    spawnCop(g, kind);
-  }
-  for (const cop of g.cops) {
-    const dx = p.x - cop.x, dz = p.z - cop.z;
-    const d = Math.hypot(dx, dz) || 1;
-    const want = Math.atan2(dx, dz);
-    let diff = want - cop.heading;
-    while (diff > Math.PI) diff -= Math.PI * 2;
-    while (diff < -Math.PI) diff += Math.PI * 2;
-    cop.heading += Math.max(-2.2 * dt, Math.min(2.2 * dt, diff));
-    cop.x += Math.sin(cop.heading) * cop.speed * dt;
-    cop.z += Math.cos(cop.heading) * cop.speed * dt;
-    if (d < 5 && g.car) {
-      // A PIT nudge — shoves the player's car and chips its paint.
-      g.car.speed *= 0.92;
-      g.car.x += (dx / d) * 0.6;
-      g.car.z += (dz / d) * 0.6;
-    }
-  }
-
-  // Air One — orbits the player at twelve metres, spotlight down.
-  if (p.wanted >= 3) {
-    if (!g.heli) {
-      g.heli = { x: p.x + 40, z: p.z, y: 12, angle: 0, locked: true, rotor: 0 };
-    }
-    const h = g.heli;
-    h.angle += dt * 0.22;
-    h.x = p.x + Math.cos(h.angle) * 35;
-    h.z = p.z + Math.sin(h.angle) * 35;
-    h.y = 12;
-    h.rotor += dt * 30;
-    h.locked = true;
-  } else if (g.heli) {
-    g.heli = null;
+  // Wanted cools off slowly when no crime happened lately — unless heat-locked.
+  if (!p.heatLock && p.wanted > 0 && g.time - p.lastCrime > 30) {
+    p.wantedTimer = (p.wantedTimer || 0) + dt;
+    if (p.wantedTimer > 30) { p.wanted -= 1; p.wantedTimer = 0; }
+  } else {
+    p.wantedTimer = 0;
   }
 }
 
-export function enterCar(g, car) {
-  g.player.inCar = true;
-  g.car = car;
-  g.player.car = car;
-  g.player.x = car.x; g.player.z = car.z;
-  g.stats.stolen += 1;
+export function addStanding(g, district, n) {
+  if (district in g.player.districtStanding) g.player.districtStanding[district] += n;
+  else g.player.districtStanding[district] = n;
 }
-export function exitCar(g) {
-  if (!g.car) return;
-  g.player.inCar = false;
-  g.player.x = g.car.x + 3; g.player.z = g.car.z;
-  g.car = null;
-  g.player.car = null;
+
+export function addRespect(g, n) {
+  g.player.respect += n;
+  g.player.rp += n * 4;
 }
-export function nearestCar(g, range) {
-  let best = null, bestD = range || 6;
-  for (const c of g.cars) {
-    if (c.exploded) continue;
-    const d = Math.hypot(c.x - g.player.x, c.z - g.player.z);
-    if (d < bestD) { bestD = d; best = c; }
-  }
-  return best;
+
+export function weaponName(g, i) {
+  return WEAPONS[i] ? WEAPONS[i].name : 'Fists';
+}
+
+export function weaponAmmoText(g, i) {
+  if (i < 2) return '∞';
+  const owned = !!g.player.weapons[i];
+  if (!owned) return 'LOCKED';
+  const w = WEAPONS[i];
+  const key = w.name.toLowerCase();
+  return `${w.ammo}/${g.player.ammo[key] ?? 0}`;
 }

@@ -4,33 +4,26 @@
 [![rank](https://make.fun/badge/gta6-01/mekzibnn/gta6-01/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![reward](https://make.fun/badge/gta6-01/mekzibnn/gta6-01/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 
-**Solmar Heat — Streets of the Sun** is a sun-soaked open-world crime game set in the coastal city of Solmar. Steal cars, outrun the KPD, build an empire, and climb from Nobody to Kingpin.
+**Solmar Heat — Streets of the Sun** is a sun-soaked open-world crime game set in the coastal city of Solmar. Steal cars, outrun the KPD, build an empire, and climb from Nobody to Solmar Legend.
 
 ## What is in the game
 
-- **12 story missions** (M1–M12) — from Wheels Up to Crew Up, with stage progress, a mission timer and a job counter on the banner.
-- **5-star dispatch** — RAM and PIT units at wanted 3+, named KPD units with roles (RAMMING, FLANKING, SPOTLIGHT, ROADBLOCK, SHORE WATCH, MARKSMAN), and Air One, the police helicopter that locks you in its light.
-- **Exploding cars and burning wrecks** — chain damage, persistent wrecks with flame and smoke.
-- **District standing** — Marina, Old Town, Docks, Hills and Downtown each track your standing, shown live in the HUD.
-- **Weapon wheel** — hold Q, pick from 7 slots (Fists, Bat, Pistol, SMG, Shotgun, Rifle, RPG) with ammo counts.
-- **Crew** — Milo (Driver, SWAP PLATES, Z), Vera (Mechanic, QUICK FIX, X), Tank (Lookout, EYES OUT, C), each with a portrait card and a cooldown.
-- **Races** — Drag, Sprint and Circuit out of the Race Office, with gates, prizes and best times.
-- **Empire** — buy 4 businesses (Laundry, Diner, Warehouse, Motel) that pay hourly, more at night.
-- **Rank panel** — rank grade, respect title, RP progress, cash and wanted stars.
-- **Garage** — engine tiers, armour tiers, nitro; crew discount applies.
-- **Day/night, weather, radio, peds, shops, saves** — a full living city: beach and sea, palms, colourful sunset buildings, clouds, traffic and pedestrians.
+- **16 story missions** (M1–M16) — from Wheels Up to the four-part Bank Job heist finale, with stage progress, a mission timer and a job counter on the banner.
+- **5-star dispatch** — RAM and PIT units at wanted 3+, named KPD units with roles (RAMMING, PIT, SHORE WATCH, FLANKING), and Air One, the police helicopter that locks you in its light.
+- **Exploding cars + persistent burning wrecks** — ram a car hard enough and it blows; the wreck keeps burning with flames and smoke.
+- **7 vehicles** — sedan, taxi, sport, van, truck, motorcycle, pickup — each with its own handling and top speed.
+- **Side activities** — taxi fares, vigilante busts, stunt jumps, hidden packages across the city.
+- **Empire** — 4 businesses (Laundry, Marina Cafe, Beach Bar, Hillside Motors) that pay hourly income, with a night boost.
+- **Crew** — Milo (Driver), Vera (Mechanic), Tank (Lookout) with abilities on Z / X / C and a 10% garage discount.
+- **Street races** — Marina Sprint, Strip Circuit, Beach Drag, with entry fees, gates and prizes.
+- **District standing, respect, rank + RP** — five districts, each with its own standing; climb from NOBODY to SOLMAR LEGEND.
+- **Weapon wheel (hold Q)** — 7 slots with ammo counts; locked slots stay locked.
+- **Day/night + weather + radio** — golden hour, rain, fog, and SOL FM 98.4.
 
 ## Controls
 
-- **W A S D** — drive / walk · **E** — steal a car, enter/exit, open a shop
-- **Space** — nitro · **Q (hold)** — weapon wheel · **1–7** — pick a weapon / shop item
-- **Z / X / C** — crew abilities · **P** — pause and save · **Esc** — close a menu
+WASD drive / walk · E steal car / open shop · Space nitro · Q hold weapon wheel · 1–7 select · Z / X / C crew abilities · P pause + save.
 
 ## Run it
 
-```sh
-node serve.ts
-# then open http://localhost:8126
-```
-
-Progress saves to localStorage (`solmar-heat.save.v2`).
+Open `game/index.html` in a browser (or serve the `game/` folder). Three.js r187 is bundled in `game/vendor/`.
