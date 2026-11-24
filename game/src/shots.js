@@ -34,15 +34,19 @@ export function stageShot(g, name) {
     g.hud.bannerT = 10; g.hud.bannerKind = 'mission';
     g.player.wanted = 3; g.player.lastCrime = g.time;
     const sedan = ensureSedan(g);
-    sedan.x = 0; sedan.z = 40; sedan.heading = 0; sedan.speed = 0; sedan.health = 100;
+    sedan.x = -3; sedan.z = 42; sedan.heading = 0; sedan.speed = 0; sedan.health = 100;
     g.player.inCar = true; g.car = sedan;
-    g.player.x = 0; g.player.z = 40; g.player.heading = 0;
+    g.player.x = -3; g.player.z = 42; g.player.heading = 0;
     // Burning wreck: blackened car, big flames, open road, flanked by police.
-    if (!g.wrecks.some((w) => Math.hypot(w.x - 3, w.z - 58) < 5)) {
-      g.wrecks.push({ x: 3, z: 58, heading: 0.6, model: 'sedan', t: 0, flames: 2 });
+    // Placed between the palm rows (z 56) so no palm foliage blocks it, and
+    // turned broadside (heading 1.1) so the long body + cab read as a car,
+    // with the two flames spread along the body. Player sedan sits left
+    // and never blocks it.
+    if (!g.wrecks.some((w) => Math.hypot(w.x - 2, w.z - 56) < 5)) {
+      g.wrecks.push({ x: 2, z: 56, heading: 1.1, model: 'sedan', t: 0, flames: 2, scale: 1.6 });
     }
     stageCops(g, [
-      { x: -4, z: 54, h: 0 }, { x: 10, z: 62, h: 0 }, { x: -9, z: 68, h: 0 },
+      { x: -4, z: 54, h: 0 }, { x: 10, z: 58, h: 0 }, { x: -9, z: 68, h: 0 },
       { x: 13, z: 72, h: 0 }, { x: -7, z: 88, h: 0 }, { x: 15, z: 84, h: 0 },
     ]);
     // Parked traffic for a busy street: taxi, sport, van.

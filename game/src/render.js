@@ -272,22 +272,33 @@ function syncWrecks(g) {
     let grp = g.render.wreckMeshes.get(w);
     if (!grp) {
       grp = new THREE.Group();
-      const body = new THREE.Mesh(new THREE.BoxGeometry(2, 0.8, 4.2), new THREE.MeshLambertMaterial({ color: 0x141414 }));
+      const body = new THREE.Mesh(new THREE.BoxGeometry(2, 0.8, 4.2), new THREE.MeshLambertMaterial({ color: 0x262626 }));
       body.position.y = 0.5;
       grp.add(body);
-      const cab = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.6, 2), new THREE.MeshLambertMaterial({ color: 0x0a0a0a }));
+      const cab = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.6, 2), new THREE.MeshLambertMaterial({ color: 0x1e1e1e }));
       cab.position.set(0, 1.1, -0.2);
       grp.add(cab);
+      // Wheels so a burnt wreck still reads as a car, not a black slab.
+      const wheelGeo = new THREE.BoxGeometry(0.5, 0.5, 0.9);
+      const wheelMat = new THREE.MeshLambertMaterial({ color: 0x0a0a0a });
+      for (const [wx, wz] of [[-0.95, 1.3], [0.95, 1.3], [-0.95, -1.3], [0.95, -1.3]]) {
+        const wh = new THREE.Mesh(wheelGeo, wheelMat);
+        wh.position.set(wx, 0.3, wz);
+        grp.add(wh);
+      }
       const f1 = new THREE.Mesh(new THREE.ConeGeometry(1.3, 3.4, 8), new THREE.MeshBasicMaterial({ color: 0xff7a1a }));
       f1.position.set(-0.4, 2.6, 0.6);
       grp.add(f1);
       const f2 = new THREE.Mesh(new THREE.ConeGeometry(0.9, 2.4, 8), new THREE.MeshBasicMaterial({ color: 0xffd94d }));
-      f2.position.set(0.5, 2.4, -0.6);
+      f2.position.set(0.7, 2.3, -1.1);
       grp.add(f2);
       const smoke = new THREE.Mesh(new THREE.SphereGeometry(1.7, 8, 6), new THREE.MeshLambertMaterial({ color: 0x555555, transparent: true, opacity: 0.55 }));
       smoke.position.set(0, 4.2, 0);
       grp.add(smoke);
       grp.userData.f1 = f1; grp.userData.f2 = f2; grp.userData.smoke = smoke;
+      // Cover staging may scale the wreck up (w.scale) so it reads big;
+      // gameplay wrecks stay at scale 1.
+      grp.scale.setScalar(w.scale || 1);
       grp.position.set(w.x, 0, w.z);
       grp.rotation.y = w.heading || 0;
       scene.add(grp);
